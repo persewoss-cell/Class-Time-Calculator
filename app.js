@@ -57,7 +57,8 @@ function defaultState(){
     actualStartMs: null,
     log: [],               // [{name, planned, doneAtMs, durationMin}]
     currentIndex: 0,
-    showSettings: false
+    showSettings: false,
+    away: false            // true면 진행 중이어도 첫화면(상태 박스)에 머무른다
   };
 }
 
@@ -145,9 +146,43 @@ function render(){
     state.phase = 'finished';
     saveState();
   }
+  if (state.away && state.phase !== 'edit') return renderHome();
   if (state.phase === 'edit') return renderEdit();
   if (state.phase === 'running') { renderRunning(); tickTimer = setInterval(renderRunning, 1000); return; }
   if (state.phase === 'finished') return renderFinished();
+}
+
+/* ---- home: 진행 중인 수업이 있을 때 나가기를 누르면 여기로 온다 ---- */
+function renderHome(){
+  const isFinished = state.phase === 'finished';
+  const current = isFinished ? null : state.tasks[state.currentIndex];
+  const doneCount = state.log.length;
+  const total = state.tasks.length;
+
+  app.innerHTML = `
+    <div class="section">
+      <h1>실습 시간 계산기</h1>
+      <div class="session-box">
+        <button class="session-box-body" id="resumeBox">
+          <div class="session-box-title">${isFinished ? '수업이 완료됐어요' : `진행 중 · ${escapeHtml(current.name)}`}</div>
+          <div class="session-box-sub">${doneCount}/${total} 완료 · 눌러서 ${isFinished ? '결과 보기' : '이어하기'}</div>
+        </button>
+        <button class="session-trash" id="trashBtn" aria-label="진행 중인 수업 삭제">&#128465;</button>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('resumeBox').addEventListener('click', ()=>{
+    state.away = false;
+    saveState();
+    render();
+  });
+  document.getElementById('trashBtn').addEventListener('click', ()=>{
+    if (!confirm('진행 중인 수업 기록을 삭제할까요? 되돌릴 수 없어요.')) return;
+    localStorage.removeItem(STORAGE_KEY);
+    state = defaultState();
+    render();
+  });
 }
 
 /* ---- edit phase: 엑셀 없이 표(행/열)를 직접 입력 ---- */
@@ -349,6 +384,7 @@ function renderRunning(){
         <div class="now-clock">${msToClock(nowMs)}</div>
         <div>
           <button class="icon-btn" id="settingsBtn">설정</button>
+          <button class="icon-btn" id="leaveBtn">나가기</button>
           <button class="icon-btn" id="resetBtn">초기화</button>
         </div>
       </div>
@@ -368,6 +404,11 @@ function renderRunning(){
   `;
 
   document.getElementById('resetBtn').addEventListener('click', resetAll);
+  document.getElementById('leaveBtn').addEventListener('click', ()=>{
+    state.away = true;
+    saveState();
+    render();
+  });
   document.getElementById('settingsBtn').addEventListener('click', ()=>{
     state.showSettings = !state.showSettings;
     saveState();
