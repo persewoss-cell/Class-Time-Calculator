@@ -1,9 +1,17 @@
 /* 실습 시간 계산기 — 정적 클라이언트 전용 앱 (백엔드/엑셀 없음, localStorage로 진행상황 보존) */
 
-const STORAGE_KEY = 'ctc_state_v2';
+const STORAGE_KEY = 'ctc_state_v3';
 
 /* ---------- time helpers ---------- */
 function pad(n){ return String(n).padStart(2,'0'); }
+function hmToMinutes(hm){
+  const [h,m] = (hm||'0:0').split(':').map(Number);
+  return (h||0)*60 + (m||0);
+}
+function minutesToHM(totalMin){
+  totalMin = ((Math.round(totalMin) % 1440) + 1440) % 1440;
+  return `${pad(Math.floor(totalMin/60))}:${pad(totalMin%60)}`;
+}
 function hmToTodayMs(hm){
   const [h,m] = (hm||'0:0').split(':').map(Number);
   const d = new Date();
@@ -28,13 +36,23 @@ function fmtSigned(min){
 function defaultState(){
   return {
     tasks: [
-      { name: '실습 1', planned: 15 },
-      { name: '실습 2', planned: 15 },
-      { name: '실습 3', planned: 15 }
+      { name: '이론', planned: 20 },
+      { name: 'STEP1', planned: 15 },
+      { name: 'STEP2', planned: 15 },
+      { name: 'STEP3', planned: 15 },
+      { name: 'STEP4(방향)', planned: 15 },
+      { name: 'STEP4(시수)', planned: 20 },
+      { name: '전단계', planned: 20 },
+      { name: '내용체계', planned: 20 },
+      { name: '핵심아이디어', planned: 20 },
+      { name: '성취기준', planned: 15 },
+      { name: '필요성/목표', planned: 15 },
+      { name: '단원지도계획', planned: 15 },
+      { name: '평가계획', planned: 15 }
     ],
     startHM: '13:30',
     targetHM: '17:10',
-    hardEndHM: '17:30',
+    hardEndHM: '00:00',
     phase: 'edit',        // edit -> running -> finished
     actualStartMs: null,
     log: [],               // [{name, planned, doneAtMs, durationMin}]
@@ -134,8 +152,9 @@ function render(){
 
 /* ---- edit phase: 엑셀 없이 표(행/열)를 직접 입력 ---- */
 function renderEdit(){
-  const preview = distribute(state.tasks, hmToTodayMs(state.startHM), hmToTodayMs(state.targetHM));
   const plannedSum = state.tasks.reduce((s,t)=>s+t.planned,0);
+  const autoTargetHM = minutesToHM(hmToMinutes(state.startHM) + plannedSum);
+  const preview = distribute(state.tasks, hmToTodayMs(state.startHM), hmToTodayMs(autoTargetHM));
 
   const rowsHtml = state.tasks.map((t, idx)=>{
     const p = preview.items[idx];
@@ -170,11 +189,11 @@ function renderEdit(){
           </div>
         </div>
         <div class="field">
-          <label>목표 종료 시각 (이 시각에 맞춰 비율 배분)</label>
-          <input type="time" id="targetInput" value="${state.targetHM}">
+          <label>목표 종료 시각 (기준 시간 합계로 자동 계산)</label>
+          <div class="computed-value">${autoTargetHM}</div>
         </div>
         <div class="field">
-          <label>강의 최종 종료 시각 (참고용)</label>
+          <label>강의 최종 종료 시각 (참고용, 직접 조정)</label>
           <input type="time" id="hardEndInput" value="${state.hardEndHM}">
         </div>
       </div>
@@ -184,7 +203,7 @@ function renderEdit(){
       </div>
       <button class="btn add-row-btn" id="addRowBtn">+ 실습 추가</button>
 
-      <p class="desc" style="margin-top:14px;">기준 시간 합계 ${fmtMin(plannedSum)}${preview.overtime ? ' · <span style="color:var(--behind);font-weight:700;">목표 종료 시각을 이미 넘겼어요</span>' : ''}</p>
+      <p class="desc" style="margin-top:14px;">기준 시간 합계 ${fmtMin(plannedSum)}</p>
       <div id="errBox" style="color:var(--behind);font-size:13px;"></div>
     </div>
     <footer class="actions">
@@ -193,7 +212,6 @@ function renderEdit(){
   `;
 
   document.getElementById('startInput').addEventListener('input', e=>{ state.startHM = e.target.value; saveState(); renderEdit(); });
-  document.getElementById('targetInput').addEventListener('input', e=>{ state.targetHM = e.target.value; saveState(); renderEdit(); });
   document.getElementById('hardEndInput').addEventListener('input', e=>{ state.hardEndHM = e.target.value; saveState(); });
   document.getElementById('nowBtn').addEventListener('click', ()=>{
     state.startHM = msToClock(Date.now());
@@ -235,6 +253,10 @@ function renderEdit(){
       return;
     }
     state.tasks = cleaned;
+    // 목표 종료 시각은 (시작 화면에 표시된) 계획 시작 시각 + 기준 시간 합계로 고정한다.
+    // 실제 시작이 늦거나 빨라도 이 목표는 바뀌지 않아야 지연/단축이 곧바로 반영된다.
+    const sum = cleaned.reduce((s,t)=>s+t.planned,0);
+    state.targetHM = minutesToHM(hmToMinutes(state.startHM) + sum);
     const now = Date.now();
     state.startHM = msToClock(now);
     state.actualStartMs = now;
