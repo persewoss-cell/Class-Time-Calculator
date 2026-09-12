@@ -169,7 +169,7 @@ function renderEdit(){
             <input type="number" class="eplanned" data-idx="${idx}" value="${t.planned}" min="1" inputmode="numeric">
             <span>분</span>
           </div>
-          <div class="epreview">추천 ${msToClock(p.recStartMs)}–${msToClock(p.recEndMs)}</div>
+          <div class="epreview">계획 ${msToClock(p.recStartMs)}–${msToClock(p.recEndMs)}</div>
         </div>
       </div>
     `;
@@ -178,7 +178,7 @@ function renderEdit(){
   app.innerHTML = `
     <div class="section">
       <h1>실습 시간 계산기</h1>
-      <p class="desc">실습명과 기준 시간(분)을 직접 입력하세요. 값을 바꿀 때마다 추천 시작~종료 시각이 자동으로 계산돼요.</p>
+      <p class="desc">실습명과 기준 시간(분)을 직접 입력하세요. 값을 바꿀 때마다 계획 시작~종료 시각이 자동으로 계산돼요.</p>
 
       <div class="card">
         <div class="field">
@@ -272,9 +272,14 @@ function renderEdit(){
 function renderRunning(){
   const nowMs = Date.now();
   const pending = state.tasks.slice(state.currentIndex);
-  const { items, overtime } = distribute(pending, nowMs, hmToTodayMs(state.targetHM));
-  const delay = cumulativeDelayMin();
   const targetMs = hmToTodayMs(state.targetHM);
+  // 계획 시작~종료 시각은 "지금"이 아니라 마지막 체크포인트(수업 시작 또는 직전 실습
+  // 완료 시각)를 기준으로 계산해 고정한다. 완료 버튼을 눌러야만(=체크포인트가 바뀌어야만)
+  // 남은 실습들의 계획이 다시 계산되고, 단순히 시간이 흐른다고 실시간으로 바뀌지 않는다.
+  const checkpointMs = state.log.length ? state.log[state.log.length-1].doneAtMs : state.actualStartMs;
+  const { items } = distribute(pending, checkpointMs, targetMs);
+  const delay = cumulativeDelayMin();
+  const liveOvertime = nowMs > targetMs;
   const untilTargetMin = (targetMs - nowMs)/60000;
 
   let badgeHtml;
@@ -287,9 +292,8 @@ function renderRunning(){
       <div class="task-main">
         <div class="task-name"><span class="check">&#10003;</span> ${escapeHtml(l.name)}</div>
         <div class="task-meta">
-          계획 ${fmtMin(l.planned)} → 실제 ${fmtMin(l.durationMin)}
+          계획 ${fmtMin(l.planned)} → 실제 ${msToClock(l.startMs)}–${msToClock(l.doneAtMs)} (${fmtMin(l.durationMin)})
           <span class="${l.durationMin>l.planned?'delta-down':'delta-up'}">${fmtSigned(l.durationMin-l.planned)}</span>
-          · ${msToClock(l.doneAtMs)} 완료
         </div>
       </div>
     </div>
@@ -311,7 +315,7 @@ function renderRunning(){
             <input type="number" class="pplanned" data-idx="${idx}" value="${t.planned}" min="1" inputmode="numeric">
             분
             ${deltaMin !== 0 ? `<span class="${deltaCls}">(${fmtSigned(deltaMin)})</span>` : ''}
-            · 추천 ${msToClock(t.recStartMs)}–${msToClock(t.recEndMs)}
+            · 계획 ${msToClock(t.recStartMs)}–${msToClock(t.recEndMs)}
           </div>
         </div>
         <div class="task-rec">${t.recMin}<small>분</small></div>
@@ -355,7 +359,7 @@ function renderRunning(){
       </div>
       ${settingsHtml}
     </div>
-    ${overtime ? `<div class="warning-banner">목표 종료 시각을 초과했어요. 남은 실습을 최소 시간으로 서둘러 진행하세요.</div>` : ''}
+    ${liveOvertime ? `<div class="warning-banner">목표 종료 시각을 초과했어요. 완료를 누르면 남은 실습 계획이 다시 계산돼요.</div>` : ''}
     <div class="task-list">
       ${doneHtml}
       ${pendingHtml}
@@ -407,7 +411,7 @@ function renderRunning(){
       const task = state.tasks[state.currentIndex];
       const prevMs = state.log.length ? state.log[state.log.length-1].doneAtMs : state.actualStartMs;
       const durationMin = (now - prevMs)/60000;
-      state.log.push({ name: task.name, planned: task.planned, doneAtMs: now, durationMin });
+      state.log.push({ name: task.name, planned: task.planned, startMs: prevMs, doneAtMs: now, durationMin });
       state.currentIndex++;
       saveState();
       render();
@@ -425,7 +429,7 @@ function renderFinished(){
   const rows = state.log.map(l => `
     <div class="summary-row">
       <span>${escapeHtml(l.name)}</span>
-      <span>${fmtMin(l.planned)} → ${fmtMin(l.durationMin)} (${fmtSigned(l.durationMin-l.planned)})</span>
+      <span>${fmtMin(l.planned)} → ${msToClock(l.startMs)}–${msToClock(l.doneAtMs)} (${fmtSigned(l.durationMin-l.planned)})</span>
     </div>
   `).join('');
 
