@@ -1,19 +1,13 @@
-/* 실습 시간 계산기 — 정적 클라이언트 전용 앱 (백엔드 없음, localStorage로 진행상황 보존) */
+/* 실습 시간 계산기 — 정적 클라이언트 전용 앱 (백엔드/엑셀 없음, localStorage로 진행상황 보존) */
 
-const STORAGE_KEY = 'ctc_state_v1';
+const STORAGE_KEY = 'ctc_state_v2';
 
 /* ---------- time helpers ---------- */
 function pad(n){ return String(n).padStart(2,'0'); }
-function minutesToHM(totalMin){
-  totalMin = Math.round(totalMin);
-  const h = Math.floor(totalMin/60)%24;
-  const m = totalMin%60;
-  return `${pad(h)}:${pad(m)}`;
-}
 function hmToTodayMs(hm){
-  const [h,m] = hm.split(':').map(Number);
+  const [h,m] = (hm||'0:0').split(':').map(Number);
   const d = new Date();
-  d.setHours(h, m, 0, 0);
+  d.setHours(h||0, m||0, 0, 0);
   return d.getTime();
 }
 function msToClock(ms){
@@ -30,56 +24,22 @@ function fmtSigned(min){
   return (r > 0 ? '+' : '') + r + '분';
 }
 
-/* ---------- excel parsing ---------- */
-async function parseExcelFile(file){
-  const buf = await file.arrayBuffer();
-  const wb = XLSX.read(buf, {type:'array', raw:true});
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json(ws, {header:1, raw:true, blankrows:false});
-
-  let startHM = null;
-  const tasks = [];
-
-  for (let i = 1; i < rows.length; i++){
-    const row = rows[i] || [];
-    const rawName = row[0];
-    if (rawName === undefined || rawName === null || String(rawName).trim() === '') continue;
-    const name = String(rawName).trim();
-
-    if (name === '시작시간'){
-      const t = row[2];
-      if (typeof t === 'number' && isFinite(t)){
-        startHM = minutesToHM(t * 24 * 60);
-      } else if (t instanceof Date){
-        startHM = `${pad(t.getHours())}:${pad(t.getMinutes())}`;
-      } else if (typeof t === 'string' && /^\d{1,2}:\d{2}/.test(t)){
-        startHM = t.slice(0,5);
-      }
-      continue;
-    }
-
-    const planned = Number(row[1]);
-    if (!isFinite(planned) || planned <= 0) continue;
-    tasks.push({ name, planned });
-  }
-
-  if (tasks.length === 0){
-    throw new Error('실습 항목을 찾을 수 없어요. 엑셀 형식을 확인해주세요 (A열: 실습명, B열: 계획 시간(분)).');
-  }
-  return { tasks, startHM };
-}
-
 /* ---------- state ---------- */
 function defaultState(){
   return {
-    tasks: null,        // [{name, planned}]
+    tasks: [
+      { name: '실습 1', planned: 15 },
+      { name: '실습 2', planned: 15 },
+      { name: '실습 3', planned: 15 }
+    ],
     startHM: '13:30',
     targetHM: '17:10',
     hardEndHM: '17:30',
-    phase: 'setup',      // setup -> ready -> running -> finished
+    phase: 'edit',        // edit -> running -> finished
     actualStartMs: null,
-    log: [],             // [{name, planned, doneAtMs, durationMin}]
-    currentIndex: 0
+    log: [],               // [{name, planned, doneAtMs, durationMin}]
+    currentIndex: 0,
+    showSettings: false
   };
 }
 
@@ -99,35 +59,34 @@ function saveState(){
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 function resetAll(){
-  if (!confirm('진행 상황을 모두 초기화할까요?')) return;
+  if (!confirm('모든 실습 목록과 진행 상황을 초기화할까요?')) return;
   localStorage.removeItem(STORAGE_KEY);
   state = defaultState();
   render();
 }
 
-/* ---------- recommendation engine ---------- */
-// Returns { remaining: [{name, planned, recMin, recStartMs, recEndMs}], remainingBudgetMin, overtime }
-function computeRecommendation(nowMs){
-  const pending = state.tasks.slice(state.currentIndex);
-  const targetMs = hmToTodayMs(state.targetHM);
-  const remainingBudgetMinRaw = (targetMs - nowMs) / 60000;
-  const plannedSum = pending.reduce((s,t)=>s+t.planned, 0);
-  const overtime = remainingBudgetMinRaw <= 0;
-  const budget = Math.max(remainingBudgetMinRaw, pending.length); // at least 1 min each if overtime
-
+/* ---------- recommendation engine ----------
+   tasks: [{name, planned}] 를 anchorMs 시각부터 시작해 targetMs 시각에 맞춰
+   계획(planned) 비율대로 분 단위 시간을 배분한다. */
+function distribute(tasks, anchorMs, targetMs){
+  const budgetRaw = (targetMs - anchorMs) / 60000;
+  const plannedSum = tasks.reduce((s,t)=>s+t.planned, 0);
+  const overtime = budgetRaw <= 0;
   let recMinutes;
-  if (plannedSum <= 0){
-    recMinutes = pending.map(()=>0);
+
+  if (tasks.length === 0){
+    recMinutes = [];
+  } else if (plannedSum <= 0){
+    recMinutes = tasks.map(()=>0);
   } else if (overtime){
-    recMinutes = pending.map(()=>1);
+    recMinutes = tasks.map(()=>1);
   } else {
-    // proportional scale, largest-remainder rounding to integer minutes summing to round(budget)
-    const targetTotal = Math.max(Math.round(budget), pending.length);
-    const raw = pending.map(t => t.planned / plannedSum * targetTotal);
-    const floors = raw.map(Math.floor).map(v => Math.max(v,1));
+    const targetTotal = Math.max(Math.round(budgetRaw), tasks.length);
+    const raw = tasks.map(t => t.planned / plannedSum * targetTotal);
+    const floors = raw.map(v => Math.max(Math.floor(v), 1));
     let used = floors.reduce((a,b)=>a+b,0);
     let remainder = targetTotal - used;
-    const order = raw.map((v,i)=>({i, frac: v - Math.floor(v)}))
+    const order = raw.map((v,i)=>({ i, frac: v - Math.floor(v) }))
                       .sort((a,b)=>b.frac - a.frac);
     recMinutes = floors.slice();
     let k = 0;
@@ -137,16 +96,16 @@ function computeRecommendation(nowMs){
     }
   }
 
-  let cursor = nowMs;
-  const remaining = pending.map((t,idx)=>{
-    const recMin = recMinutes[idx];
+  let cursor = anchorMs;
+  const items = tasks.map((t,idx)=>{
+    const recMin = recMinutes[idx] || 0;
     const recStartMs = cursor;
     const recEndMs = cursor + recMin*60000;
     cursor = recEndMs;
     return { ...t, recMin, recStartMs, recEndMs };
   });
 
-  return { remaining, remainingBudgetMin: remainingBudgetMinRaw, overtime };
+  return { items, remainingBudgetMin: budgetRaw, overtime };
 }
 
 function cumulativeDelayMin(nowMs){
@@ -154,7 +113,7 @@ function cumulativeDelayMin(nowMs){
   const plannedElapsed = state.log.reduce((s,l)=>s+l.planned, 0);
   const actualElapsed = (state.log.length
       ? state.log[state.log.length-1].doneAtMs
-      : state.actualStartMs) - state.actualStartMs;
+      : nowMs) - state.actualStartMs;
   return (actualElapsed/60000) - plannedElapsed;
 }
 
@@ -164,99 +123,134 @@ let tickTimer = null;
 
 function render(){
   if (tickTimer) clearInterval(tickTimer);
-  if (state.phase === 'setup') return renderSetup();
-  if (state.phase === 'ready') return renderReady();
+  if (state.phase === 'running' && state.currentIndex >= state.tasks.length){
+    state.phase = 'finished';
+    saveState();
+  }
+  if (state.phase === 'edit') return renderEdit();
   if (state.phase === 'running') { renderRunning(); tickTimer = setInterval(renderRunning, 1000); return; }
   if (state.phase === 'finished') return renderFinished();
 }
 
-function renderSetup(){
-  app.innerHTML = `
-    <div class="section">
-      <h1>실습 시간 계산기</h1>
-      <p class="desc">실습 목록 엑셀 파일을 올리면, 각 실습을 마칠 때마다 남은 실습들의 추천 시간이 자동으로 재계산돼요.</p>
-      <div class="upload-box">
-        <div>엑셀 파일 (.xlsx)을 선택하세요</div>
-        <div style="font-size:12px;margin-top:4px;">A열: 실습명 · B열: 계획 시간(분)</div>
-        <label class="upload-label">
-          파일 선택
-          <input type="file" id="fileInput" accept=".xlsx,.xls">
-        </label>
-      </div>
-      <div id="errBox" style="color:#dc2626;font-size:13px;margin-top:12px;"></div>
-    </div>
-  `;
-  document.getElementById('fileInput').addEventListener('change', async (e)=>{
-    const file = e.target.files[0];
-    if (!file) return;
-    try{
-      const { tasks, startHM } = await parseExcelFile(file);
-      state = defaultState();
-      state.tasks = tasks;
-      if (startHM) state.startHM = startHM;
-      const startMin = hmToMinutes(state.startHM);
-      const plannedSum = tasks.reduce((s,t)=>s+t.planned,0);
-      state.targetHM = minutesToHM(startMin + plannedSum);
-      state.phase = 'ready';
-      saveState();
-      render();
-    }catch(err){
-      document.getElementById('errBox').textContent = err.message || String(err);
-    }
-  });
-}
-
-function hmToMinutes(hm){
-  const [h,m] = hm.split(':').map(Number);
-  return h*60+m;
-}
-
-function renderReady(){
+/* ---- edit phase: 엑셀 없이 표(행/열)를 직접 입력 ---- */
+function renderEdit(){
+  const preview = distribute(state.tasks, hmToTodayMs(state.startHM), hmToTodayMs(state.targetHM));
   const plannedSum = state.tasks.reduce((s,t)=>s+t.planned,0);
+
+  const rowsHtml = state.tasks.map((t, idx)=>{
+    const p = preview.items[idx];
+    return `
+      <div class="edit-row" data-idx="${idx}">
+        <div class="edit-row-top">
+          <input type="text" class="ename" data-idx="${idx}" value="${escapeAttr(t.name)}" placeholder="실습명">
+          <button class="del-btn" data-idx="${idx}" aria-label="삭제">×</button>
+        </div>
+        <div class="edit-row-bottom">
+          <div class="eplan">
+            <input type="number" class="eplanned" data-idx="${idx}" value="${t.planned}" min="1" inputmode="numeric">
+            <span>분</span>
+          </div>
+          <div class="epreview">추천 ${msToClock(p.recStartMs)}–${msToClock(p.recEndMs)}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
   app.innerHTML = `
     <div class="section">
       <h1>실습 시간 계산기</h1>
-      <p class="desc">${state.tasks.length}개 실습 · 계획 합계 ${fmtMin(plannedSum)}</p>
+      <p class="desc">실습명과 기준 시간(분)을 직접 입력하세요. 값을 바꿀 때마다 추천 시작~종료 시각이 자동으로 계산돼요.</p>
+
       <div class="card">
         <div class="field">
-          <label>수업 시작 예정 시각</label>
-          <input type="time" id="startInput" value="${state.startHM}">
+          <label>시작 시각</label>
+          <div class="time-row">
+            <input type="time" id="startInput" value="${state.startHM}">
+            <button class="btn-mini" id="nowBtn">지금</button>
+          </div>
         </div>
         <div class="field">
-          <label>목표 종료 시각 (이 시각에 맞춰 시간 배분)</label>
+          <label>목표 종료 시각 (이 시각에 맞춰 비율 배분)</label>
           <input type="time" id="targetInput" value="${state.targetHM}">
         </div>
         <div class="field">
           <label>강의 최종 종료 시각 (참고용)</label>
           <input type="time" id="hardEndInput" value="${state.hardEndHM}">
         </div>
-        <button class="btn btn-primary" id="startBtn">수업 시작</button>
       </div>
+
+      <div class="edit-list">
+        ${rowsHtml}
+      </div>
+      <button class="btn add-row-btn" id="addRowBtn">+ 실습 추가</button>
+
+      <p class="desc" style="margin-top:14px;">기준 시간 합계 ${fmtMin(plannedSum)}${preview.overtime ? ' · <span style="color:var(--behind);font-weight:700;">목표 종료 시각을 이미 넘겼어요</span>' : ''}</p>
+      <div id="errBox" style="color:var(--behind);font-size:13px;"></div>
     </div>
     <footer class="actions">
-      <button class="btn btn-ghost" id="reuploadBtn">다른 파일 업로드</button>
+      <button class="btn btn-primary" id="startBtn">수업 시작</button>
     </footer>
   `;
-  document.getElementById('startInput').addEventListener('change', e=>{ state.startHM = e.target.value; saveState(); });
-  document.getElementById('targetInput').addEventListener('change', e=>{ state.targetHM = e.target.value; saveState(); });
-  document.getElementById('hardEndInput').addEventListener('change', e=>{ state.hardEndHM = e.target.value; saveState(); });
-  document.getElementById('startBtn').addEventListener('click', ()=>{
-    state.actualStartMs = Date.now();
-    state.phase = 'running';
+
+  document.getElementById('startInput').addEventListener('input', e=>{ state.startHM = e.target.value; saveState(); renderEdit(); });
+  document.getElementById('targetInput').addEventListener('input', e=>{ state.targetHM = e.target.value; saveState(); renderEdit(); });
+  document.getElementById('hardEndInput').addEventListener('input', e=>{ state.hardEndHM = e.target.value; saveState(); });
+  document.getElementById('nowBtn').addEventListener('click', ()=>{
+    state.startHM = msToClock(Date.now());
     saveState();
-    render();
+    renderEdit();
   });
-  document.getElementById('reuploadBtn').addEventListener('click', ()=>{
-    if (!confirm('현재 불러온 실습 목록을 버리고 새 파일을 업로드할까요?')) return;
-    state = defaultState();
+  document.getElementById('addRowBtn').addEventListener('click', ()=>{
+    state.tasks.push({ name: `실습 ${state.tasks.length+1}`, planned: 10 });
+    saveState();
+    renderEdit();
+  });
+  app.querySelectorAll('.ename').forEach(el=>{
+    el.addEventListener('input', e=>{
+      state.tasks[+e.target.dataset.idx].name = e.target.value;
+      saveState();
+    });
+  });
+  app.querySelectorAll('.eplanned').forEach(el=>{
+    el.addEventListener('input', e=>{
+      const v = Math.max(1, Number(e.target.value) || 1);
+      state.tasks[+e.target.dataset.idx].planned = v;
+      saveState();
+      renderEdit();
+    });
+  });
+  app.querySelectorAll('.del-btn').forEach(el=>{
+    el.addEventListener('click', e=>{
+      state.tasks.splice(+e.target.dataset.idx, 1);
+      saveState();
+      renderEdit();
+    });
+  });
+  document.getElementById('startBtn').addEventListener('click', ()=>{
+    const cleaned = state.tasks
+      .map((t,i)=>({ name: (t.name||'').trim() || `실습 ${i+1}`, planned: Math.max(1, Number(t.planned)||0) }))
+      .filter(t => t.planned > 0);
+    if (cleaned.length === 0){
+      document.getElementById('errBox').textContent = '실습을 1개 이상 추가해주세요.';
+      return;
+    }
+    state.tasks = cleaned;
+    const now = Date.now();
+    state.startHM = msToClock(now);
+    state.actualStartMs = now;
+    state.log = [];
+    state.currentIndex = 0;
+    state.phase = 'running';
     saveState();
     render();
   });
 }
 
+/* ---- running phase ---- */
 function renderRunning(){
   const nowMs = Date.now();
-  const { remaining, remainingBudgetMin, overtime } = computeRecommendation(nowMs);
+  const pending = state.tasks.slice(state.currentIndex);
+  const { items, overtime } = distribute(pending, nowMs, hmToTodayMs(state.targetHM));
   const delay = cumulativeDelayMin(nowMs);
   const targetMs = hmToTodayMs(state.targetHM);
   const untilTargetMin = (targetMs - nowMs)/60000;
@@ -279,16 +273,21 @@ function renderRunning(){
     </div>
   `).join('');
 
-  const pendingHtml = remaining.map((t, idx)=>{
+  const pendingHtml = items.map((t, idx)=>{
     const isCurrent = idx === 0;
     const deltaMin = t.recMin - t.planned;
     const deltaCls = deltaMin > 0 ? 'delta-up' : (deltaMin < 0 ? 'delta-down' : '');
     return `
       <div class="task ${isCurrent ? 'current' : ''}">
         <div class="task-main">
-          <div class="task-name">${escapeHtml(t.name)}</div>
+          <div class="task-name-row">
+            <input type="text" class="pname" data-idx="${idx}" value="${escapeAttr(t.name)}">
+            <button class="del-btn small" data-idx="${idx}" aria-label="삭제">×</button>
+          </div>
           <div class="task-meta">
-            계획 ${fmtMin(t.planned)}
+            기준
+            <input type="number" class="pplanned" data-idx="${idx}" value="${t.planned}" min="1" inputmode="numeric">
+            분
             ${deltaMin !== 0 ? `<span class="${deltaCls}">(${fmtSigned(deltaMin)})</span>` : ''}
             · 추천 ${msToClock(t.recStartMs)}–${msToClock(t.recEndMs)}
           </div>
@@ -301,26 +300,84 @@ function renderRunning(){
     `;
   }).join('');
 
+  const settingsHtml = state.showSettings ? `
+    <div class="settings-panel">
+      <div class="field">
+        <label>시작 시각</label>
+        <input type="time" id="startInputR" value="${state.startHM}">
+      </div>
+      <div class="field">
+        <label>목표 종료 시각</label>
+        <input type="time" id="targetInputR" value="${state.targetHM}">
+      </div>
+      <div class="field">
+        <label>강의 최종 종료 시각 (참고용)</label>
+        <input type="time" id="hardEndInputR" value="${state.hardEndHM}">
+      </div>
+    </div>
+  ` : '';
+
   app.innerHTML = `
     <div class="topbar">
       <div class="topbar-row">
         <div class="now-clock">${msToClock(nowMs)}</div>
-        <button class="icon-btn" id="resetBtn">초기화</button>
+        <div>
+          <button class="icon-btn" id="settingsBtn">설정</button>
+          <button class="icon-btn" id="resetBtn">초기화</button>
+        </div>
       </div>
       <div class="stats">
         <div class="stat"><div class="label">목표 종료</div><div class="value">${state.targetHM}</div></div>
         <div class="stat"><div class="label">남은 시간</div><div class="value">${untilTargetMin>=0?fmtMin(untilTargetMin):'초과 '+fmtMin(-untilTargetMin)}</div></div>
         <div class="stat"><div class="label">진행 상태</div><div class="value">${badgeHtml}</div></div>
       </div>
+      ${settingsHtml}
     </div>
     ${overtime ? `<div class="warning-banner">목표 종료 시각을 초과했어요. 남은 실습을 최소 시간으로 서둘러 진행하세요.</div>` : ''}
     <div class="task-list">
       ${doneHtml}
       ${pendingHtml}
     </div>
+    <button class="btn add-row-btn add-row-btn-inline" id="addRowBtnR">+ 실습 추가</button>
   `;
 
   document.getElementById('resetBtn').addEventListener('click', resetAll);
+  document.getElementById('settingsBtn').addEventListener('click', ()=>{
+    state.showSettings = !state.showSettings;
+    saveState();
+    renderRunning();
+  });
+  if (state.showSettings){
+    document.getElementById('startInputR').addEventListener('input', e=>{ state.startHM = e.target.value; saveState(); });
+    document.getElementById('targetInputR').addEventListener('input', e=>{ state.targetHM = e.target.value; saveState(); renderRunning(); });
+    document.getElementById('hardEndInputR').addEventListener('input', e=>{ state.hardEndHM = e.target.value; saveState(); });
+  }
+  document.getElementById('addRowBtnR').addEventListener('click', ()=>{
+    state.tasks.push({ name: `실습 ${state.tasks.length+1}`, planned: 10 });
+    saveState();
+    renderRunning();
+  });
+  app.querySelectorAll('.pname').forEach(el=>{
+    el.addEventListener('input', e=>{
+      state.tasks[state.currentIndex + (+e.target.dataset.idx)].name = e.target.value;
+      saveState();
+    });
+  });
+  app.querySelectorAll('.pplanned').forEach(el=>{
+    el.addEventListener('input', e=>{
+      const v = Math.max(1, Number(e.target.value) || 1);
+      state.tasks[state.currentIndex + (+e.target.dataset.idx)].planned = v;
+      saveState();
+      renderRunning();
+    });
+  });
+  app.querySelectorAll('.del-btn.small').forEach(el=>{
+    el.addEventListener('click', e=>{
+      state.tasks.splice(state.currentIndex + (+e.target.dataset.idx), 1);
+      saveState();
+      render();
+    });
+  });
   const doneBtn = document.getElementById('doneBtn');
   if (doneBtn){
     doneBtn.addEventListener('click', ()=>{
@@ -330,15 +387,13 @@ function renderRunning(){
       const durationMin = (now - prevMs)/60000;
       state.log.push({ name: task.name, planned: task.planned, doneAtMs: now, durationMin });
       state.currentIndex++;
-      if (state.currentIndex >= state.tasks.length){
-        state.phase = 'finished';
-      }
       saveState();
       render();
     });
   }
 }
 
+/* ---- finished phase ---- */
 function renderFinished(){
   const totalPlanned = state.tasks.reduce((s,t)=>s+t.planned,0);
   const totalActual = state.log.reduce((s,l)=>s+l.durationMin,0);
@@ -368,11 +423,22 @@ function renderFinished(){
     </div>
     <footer class="actions">
       <button class="btn btn-primary" id="restartBtn">같은 목록으로 다시 진행</button>
-      <button class="btn btn-danger-ghost" id="resetBtn2">전체 초기화 (새 파일)</button>
+      <button class="btn btn-ghost" id="editBtn">실습 목록 수정</button>
+      <button class="btn btn-danger-ghost" id="resetBtn2">전체 초기화</button>
     </footer>
   `;
   document.getElementById('restartBtn').addEventListener('click', ()=>{
-    state.phase = 'ready';
+    state.phase = 'running';
+    const now = Date.now();
+    state.startHM = msToClock(now);
+    state.actualStartMs = now;
+    state.log = [];
+    state.currentIndex = 0;
+    saveState();
+    render();
+  });
+  document.getElementById('editBtn').addEventListener('click', ()=>{
+    state.phase = 'edit';
     state.actualStartMs = null;
     state.log = [];
     state.currentIndex = 0;
@@ -384,6 +450,9 @@ function renderFinished(){
 
 function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function escapeAttr(s){
+  return escapeHtml(s);
 }
 
 render();
