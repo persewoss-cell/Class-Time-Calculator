@@ -126,12 +126,12 @@ function distribute(tasks, anchorMs, targetMs){
   return { items, remainingBudgetMin: budgetRaw, overtime };
 }
 
-function cumulativeDelayMin(nowMs){
-  if (state.actualStartMs == null) return 0;
+function cumulativeDelayMin(){
+  // 완료된 실습만으로 계산한다. 진행 중인(아직 완료 버튼을 안 누른) 실습에
+  // 흐르고 있는 시간은 완료 시점 전까지는 지연/단축에 반영하지 않는다.
+  if (state.log.length === 0) return 0;
   const plannedElapsed = state.log.reduce((s,l)=>s+l.planned, 0);
-  const actualElapsed = (state.log.length
-      ? state.log[state.log.length-1].doneAtMs
-      : nowMs) - state.actualStartMs;
+  const actualElapsed = state.log[state.log.length-1].doneAtMs - state.actualStartMs;
   return (actualElapsed/60000) - plannedElapsed;
 }
 
@@ -273,7 +273,7 @@ function renderRunning(){
   const nowMs = Date.now();
   const pending = state.tasks.slice(state.currentIndex);
   const { items, overtime } = distribute(pending, nowMs, hmToTodayMs(state.targetHM));
-  const delay = cumulativeDelayMin(nowMs);
+  const delay = cumulativeDelayMin();
   const targetMs = hmToTodayMs(state.targetHM);
   const untilTargetMin = (targetMs - nowMs)/60000;
 
