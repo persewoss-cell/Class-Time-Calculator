@@ -1,17 +1,9 @@
 /* 실습 시간 계산기 — 정적 클라이언트 전용 앱 (백엔드/엑셀 없음, localStorage로 진행상황 보존) */
 
-const STORAGE_KEY = 'ctc_state_v4';
+const STORAGE_KEY = 'ctc_state_v5';
 
 /* ---------- time helpers ---------- */
 function pad(n){ return String(n).padStart(2,'0'); }
-function hmToMinutes(hm){
-  const [h,m] = (hm||'0:0').split(':').map(Number);
-  return (h||0)*60 + (m||0);
-}
-function minutesToHM(totalMin){
-  totalMin = ((Math.round(totalMin) % 1440) + 1440) % 1440;
-  return `${pad(Math.floor(totalMin/60))}:${pad(totalMin%60)}`;
-}
 function hmToTodayMs(hm){
   const [h,m] = (hm||'0:0').split(':').map(Number);
   const d = new Date();
@@ -31,9 +23,24 @@ function fmtSigned(min){
   if (r === 0) return '±0분';
   return (r > 0 ? '+' : '') + r + '분';
 }
-// 강의 최종 종료 시각 = 시작 시각 + 강의 전체 계획 시간(시간/분)
-function computeHardEndHM(s){
-  return minutesToHM(hmToMinutes(s.startHM) + (Number(s.hardEndH)||0)*60 + (Number(s.hardEndM)||0));
+// "HH:MM"을 refMs 시각과 같은 날짜로 해석했을 때 이미 지난 시각이면(예: 21시에
+// 시작해서 새벽 1시에 끝나는 경우) 다음 날로 넘겨서 절대 시각(ms)을 계산한다.
+// 자정을 넘기는 일정을 "당일"로 잘못 계산해 수백 분씩 마이너스가 나던 버그의 원인이었다.
+function resolveTimeOnOrAfter(hm, refMs){
+  const [h, m] = (hm||'0:0').split(':').map(Number);
+  const d = new Date(refMs);
+  d.setHours(h||0, m||0, 0, 0);
+  if (d.getTime() < refMs) d.setDate(d.getDate()+1);
+  return d.getTime();
+}
+// ms 시각을 "HH:MM"으로 표시하되, 기준 시각(baseMs)과 날짜가 다르면(자정을 넘겼으면)
+// "(+1일)"처럼 며칠 뒤인지 붙여서 헷갈리지 않게 한다.
+function formatClockRel(ms, baseMs){
+  const clock = msToClock(ms);
+  if (baseMs == null) return clock;
+  const a = new Date(baseMs), b = new Date(ms);
+  const dayDiff = Math.round((Date.UTC(b.getFullYear(),b.getMonth(),b.getDate()) - Date.UTC(a.getFullYear(),a.getMonth(),a.getDate())) / 86400000);
+  return dayDiff > 0 ? `${clock}(+${dayDiff}일)` : clock;
 }
 
 /* ---------- state ---------- */
@@ -55,9 +62,9 @@ function defaultState(){
       { name: '평가계획', planned: 15 }
     ],
     startHM: '13:30',
-    targetHM: '17:10',
-    hardEndH: 2,            // 강의 전체 계획 시간(시작 시각 + 이 시간/분 = 강의 최종 종료 시각)
-    hardEndM: 0,
+    targetMs: null,         // 목표 종료 시각(절대 ms). 수업 시작 시 확정되어 자정을 넘겨도 정확하다.
+    hardEndH: 3,            // 강의 전체 계획 시간(시작 시각 + 이 시간/분 = 강의 최종 종료 시각)
+    hardEndM: 50,
     phase: 'edit',        // edit -> running -> finished
     actualStartMs: null,
     log: [],               // [{name, planned, doneAtMs, durationMin}]
@@ -246,8 +253,13 @@ function renderHome(){
 /* ---- edit phase: 엑셀 없이 표(행/열)를 직접 입력 ---- */
 function renderEdit(){
   const plannedSum = state.tasks.reduce((s,t)=>s+t.planned,0);
-  const autoTargetHM = minutesToHM(hmToMinutes(state.startHM) + plannedSum);
-  const preview = distribute(state.tasks, hmToTodayMs(state.startHM), hmToTodayMs(autoTargetHM));
+  // 시작 시각을 오늘 날짜에 얹어 가상의 기준 시각으로 삼는다. 목표/최종 종료는 여기에
+  // 분 단위를 그대로 "더하기"만 해서 구하므로(문자열로 바꿨다가 다시 파싱하지 않음)
+  // 자정을 넘기는 일정(예: 21시 시작 → 다음날 01시 종료)도 날짜가 저절로 넘어간다.
+  const plannedAnchorMs = hmToTodayMs(state.startHM);
+  const previewTargetMs = plannedAnchorMs + plannedSum*60000;
+  const previewHardEndMs = plannedAnchorMs + ((Number(state.hardEndH)||0)*60 + (Number(state.hardEndM)||0))*60000;
+  const preview = distribute(state.tasks, plannedAnchorMs, previewTargetMs);
 
   const rowsHtml = state.tasks.map((t, idx)=>{
     const p = preview.items[idx];
@@ -262,7 +274,7 @@ function renderEdit(){
             <input type="text" class="eplanned" data-idx="${idx}" value="${t.planned}" inputmode="numeric" pattern="[0-9]*">
             <span>분</span>
           </div>
-          <div class="epreview">계획 ${msToClock(p.recStartMs)}–${msToClock(p.recEndMs)}</div>
+          <div class="epreview">계획 ${formatClockRel(p.recStartMs, plannedAnchorMs)}–${formatClockRel(p.recEndMs, plannedAnchorMs)}</div>
         </div>
       </div>
     `;
@@ -283,7 +295,7 @@ function renderEdit(){
         </div>
         <div class="field">
           <label>목표 종료 시각 (기준 시간 합계로 자동 계산)</label>
-          <div class="computed-value">${autoTargetHM}</div>
+          <div class="computed-value">${formatClockRel(previewTargetMs, plannedAnchorMs)}</div>
         </div>
         <div class="field">
           <label>강의 전체 계획 시간 (시작 시각 기준, 참고용)</label>
@@ -292,7 +304,7 @@ function renderEdit(){
             <input type="text" id="hardEndMInput" value="${state.hardEndM}" inputmode="numeric" pattern="[0-9]*"><span>분</span>
             <span class="duration-arrow">뒤</span>
           </div>
-          <div class="computed-value" style="margin-top:6px;">강의 최종 종료 ${computeHardEndHM(state)}</div>
+          <div class="computed-value" style="margin-top:6px;">강의 최종 종료 ${formatClockRel(previewHardEndMs, plannedAnchorMs)}</div>
         </div>
       </div>
 
@@ -360,9 +372,10 @@ function renderEdit(){
     }
     state.tasks = cleaned;
     // 목표 종료 시각은 (시작 화면에 표시된) 계획 시작 시각 + 기준 시간 합계로 고정한다.
+    // 절대 ms로 계산해두면 자정을 넘기는 일정도 날짜가 저절로 넘어간다.
     // 실제 시작이 늦거나 빨라도 이 목표는 바뀌지 않아야 지연/단축이 곧바로 반영된다.
     const sum = cleaned.reduce((s,t)=>s+t.planned,0);
-    state.targetHM = minutesToHM(hmToMinutes(state.startHM) + sum);
+    state.targetMs = hmToTodayMs(state.startHM) + sum*60000;
     const now = Date.now();
     state.startHM = msToClock(now);
     state.actualStartMs = now;
@@ -378,7 +391,7 @@ function renderEdit(){
 function renderRunning(){
   const nowMs = Date.now();
   const pending = state.tasks.slice(state.currentIndex);
-  const targetMs = hmToTodayMs(state.targetHM);
+  const targetMs = state.targetMs;
   // 계획 시작~종료 시각은 "지금"이 아니라 마지막 체크포인트(수업 시작 또는 직전 실습
   // 완료 시각)를 기준으로 계산해 고정한다. 완료 버튼을 눌러야만(=체크포인트가 바뀌어야만)
   // 남은 실습들의 계획이 다시 계산되고, 단순히 시간이 흐른다고 실시간으로 바뀌지 않는다.
@@ -398,7 +411,7 @@ function renderRunning(){
       <div class="task-main">
         <div class="task-name"><span class="check">&#10003;</span> ${escapeHtml(l.name)}</div>
         <div class="task-meta">
-          계획 ${fmtMin(l.planned)} → 실제 ${msToClock(l.startMs)}–${msToClock(l.doneAtMs)} (${fmtMin(l.durationMin)})
+          계획 ${fmtMin(l.planned)} → 실제 ${formatClockRel(l.startMs, state.actualStartMs)}–${formatClockRel(l.doneAtMs, state.actualStartMs)} (${fmtMin(l.durationMin)})
           <span class="${l.durationMin>l.planned?'delta-down':'delta-up'}">${fmtSigned(l.durationMin-l.planned)}</span>
         </div>
       </div>
@@ -421,7 +434,7 @@ function renderRunning(){
             <input type="text" class="pplanned" data-idx="${idx}" value="${t.planned}" inputmode="numeric" pattern="[0-9]*">
             분
             ${deltaMin !== 0 ? `<span class="${deltaCls}">(${fmtSigned(deltaMin)})</span>` : ''}
-            · 계획 ${msToClock(t.recStartMs)}–${msToClock(t.recEndMs)}
+            · 계획 ${formatClockRel(t.recStartMs, state.actualStartMs)}–${formatClockRel(t.recEndMs, state.actualStartMs)}
           </div>
         </div>
         <div class="task-rec">${t.recMin}<small>분</small></div>
@@ -440,7 +453,7 @@ function renderRunning(){
       </div>
       <div class="field">
         <label>목표 종료 시각</label>
-        <input type="time" id="targetInputR" value="${state.targetHM}">
+        <input type="time" id="targetInputR" value="${msToClock(state.targetMs)}">
       </div>
       <div class="field">
         <label>강의 전체 계획 시간 (시작 시각 기준, 참고용)</label>
@@ -449,7 +462,7 @@ function renderRunning(){
           <input type="text" id="hardEndMInputR" value="${state.hardEndM}" inputmode="numeric" pattern="[0-9]*"><span>분</span>
           <span class="duration-arrow">뒤</span>
         </div>
-        <div class="computed-value" style="margin-top:6px;">강의 최종 종료 ${computeHardEndHM(state)}</div>
+        <div class="computed-value" style="margin-top:6px;">강의 최종 종료 ${formatClockRel(state.actualStartMs + ((Number(state.hardEndH)||0)*60 + (Number(state.hardEndM)||0))*60000, state.actualStartMs)}</div>
       </div>
     </div>
   ` : '';
@@ -465,7 +478,7 @@ function renderRunning(){
         </div>
       </div>
       <div class="stats">
-        <div class="stat"><div class="label">목표 종료</div><div class="value">${state.targetHM}</div></div>
+        <div class="stat"><div class="label">목표 종료</div><div class="value">${formatClockRel(targetMs, state.actualStartMs)}</div></div>
         <div class="stat"><div class="label">남은 시간</div><div class="value">${untilTargetMin>=0?fmtMin(untilTargetMin):'초과 '+fmtMin(-untilTargetMin)}</div></div>
         <div class="stat"><div class="label">진행 상태</div><div class="value">${badgeHtml}</div></div>
       </div>
@@ -492,7 +505,12 @@ function renderRunning(){
   });
   if (state.showSettings){
     document.getElementById('startInputR').addEventListener('input', e=>{ state.startHM = e.target.value; saveState(); renderRunning(); });
-    document.getElementById('targetInputR').addEventListener('input', e=>{ state.targetHM = e.target.value; saveState(); renderRunning(); });
+    document.getElementById('targetInputR').addEventListener('input', e=>{
+      // 시:분만 입력하므로, 지금 목표보다 이전 시각이면(자정을 넘겨야 하는 경우) 다음 날로 계산한다.
+      state.targetMs = resolveTimeOnOrAfter(e.target.value, state.actualStartMs);
+      saveState();
+      renderRunning();
+    });
     const hardEndHInputR = document.getElementById('hardEndHInputR');
     const hardEndMInputR = document.getElementById('hardEndMInputR');
     hardEndHInputR.setAttribute('enterkeyhint', 'next');
@@ -554,7 +572,7 @@ function renderFinished(){
   const rows = state.log.map(l => `
     <div class="summary-row">
       <span>${escapeHtml(l.name)}</span>
-      <span>${fmtMin(l.planned)} → ${msToClock(l.startMs)}–${msToClock(l.doneAtMs)} (${fmtSigned(l.durationMin-l.planned)})</span>
+      <span>${fmtMin(l.planned)} → ${formatClockRel(l.startMs, state.actualStartMs)}–${formatClockRel(l.doneAtMs, state.actualStartMs)} (${fmtSigned(l.durationMin-l.planned)})</span>
     </div>
   `).join('');
 
@@ -563,9 +581,9 @@ function renderFinished(){
       <h1>수업 완료</h1>
       <div class="card finish-card">
         <div class="label" style="color:var(--muted);font-size:13px;">종료 시각</div>
-        <div class="big">${msToClock(endMs)}</div>
+        <div class="big">${formatClockRel(endMs, state.actualStartMs)}</div>
         <div style="color:${diff>0?'var(--behind)':'var(--ahead)'};font-weight:700;">
-          목표(${state.targetHM}) 대비 ${fmtSigned(diff)}
+          목표(${formatClockRel(state.targetMs, state.actualStartMs)}) 대비 ${fmtSigned(diff)}
         </div>
       </div>
       <div class="card" style="margin-top:12px;">
