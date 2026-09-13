@@ -56,7 +56,7 @@ function defaultState(){
     ],
     startHM: '13:30',
     targetHM: '17:10',
-    hardEndH: 4,            // 강의 전체 계획 시간(시작 시각 + 이 시간/분 = 강의 최종 종료 시각)
+    hardEndH: 2,            // 강의 전체 계획 시간(시작 시각 + 이 시간/분 = 강의 최종 종료 시각)
     hardEndM: 0,
     phase: 'edit',        // edit -> running -> finished
     actualStartMs: null,
