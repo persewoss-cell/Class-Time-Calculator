@@ -366,15 +366,13 @@ function renderEdit(){
         </div>
         <div class="field">
           <label>실제 강의 종료 시각</label>
-          <div class="duration-row">
-            <input type="text" class="duration-input duration-h" id="hardEndHInput" value="${state.hardEndH}" placeholder="0" inputmode="numeric" pattern="[0-9]*"><span>시간</span>
-            <input type="text" class="duration-input duration-m" id="hardEndMInput" value="${state.hardEndM}" placeholder="0" inputmode="numeric" pattern="[0-9]*"><span>분</span>
-            <span class="duration-arrow">뒤</span>
-          </div>
-          <div class="duration-or">또는</div>
-          <div class="duration-row">
+          <div class="duration-row duration-row-combined">
             <input type="text" class="duration-input duration-h" id="hardEndAbsHInput" value="${state.hardEndAbsH}" placeholder="0" inputmode="numeric" pattern="[0-9]*"><span>시</span>
             <input type="text" class="duration-input duration-m" id="hardEndAbsMInput" value="${state.hardEndAbsM}" placeholder="0" inputmode="numeric" pattern="[0-9]*"><span>분</span>
+            <span class="duration-or-inline">또는</span>
+            <input type="text" class="duration-input duration-h" id="hardEndHInput" value="${state.hardEndH}" placeholder="0" inputmode="numeric" pattern="[0-9]*"><span>시간</span>
+            <input type="text" class="duration-input duration-m" id="hardEndMInput" value="${state.hardEndM}" placeholder="0" inputmode="numeric" pattern="[0-9]*"><span>분</span>
+            <span>뒤</span>
           </div>
           ${hardEndInfo.error
             ? `<div class="computed-value" style="margin-top:6px;color:var(--behind);">${hardEndInfo.error}</div>`
@@ -550,15 +548,13 @@ function renderRunning(){
       </div>
       <div class="field">
         <label>실제 강의 종료 시각</label>
-        <div class="duration-row">
-          <input type="text" class="duration-input duration-h" id="hardEndHInputR" value="${state.hardEndH}" placeholder="0" inputmode="numeric" pattern="[0-9]*"><span>시간</span>
-          <input type="text" class="duration-input duration-m" id="hardEndMInputR" value="${state.hardEndM}" placeholder="0" inputmode="numeric" pattern="[0-9]*"><span>분</span>
-          <span class="duration-arrow">뒤</span>
-        </div>
-        <div class="duration-or">또는</div>
-        <div class="duration-row">
+        <div class="duration-row duration-row-combined">
           <input type="text" class="duration-input duration-h" id="hardEndAbsHInputR" value="${state.hardEndAbsH}" placeholder="0" inputmode="numeric" pattern="[0-9]*"><span>시</span>
           <input type="text" class="duration-input duration-m" id="hardEndAbsMInputR" value="${state.hardEndAbsM}" placeholder="0" inputmode="numeric" pattern="[0-9]*"><span>분</span>
+          <span class="duration-or-inline">또는</span>
+          <input type="text" class="duration-input duration-h" id="hardEndHInputR" value="${state.hardEndH}" placeholder="0" inputmode="numeric" pattern="[0-9]*"><span>시간</span>
+          <input type="text" class="duration-input duration-m" id="hardEndMInputR" value="${state.hardEndM}" placeholder="0" inputmode="numeric" pattern="[0-9]*"><span>분</span>
+          <span>뒤</span>
         </div>
         ${hardEndInfo.error
           ? `<div class="computed-value" style="margin-top:6px;color:var(--behind);">${hardEndInfo.error}</div>`
