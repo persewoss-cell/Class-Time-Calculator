@@ -1,6 +1,6 @@
 /* 실습 시간 계산기 — 정적 클라이언트 전용 앱 (백엔드/엑셀 없음, localStorage로 진행상황 보존) */
 
-const STORAGE_KEY = 'ctc_state_v3';
+const STORAGE_KEY = 'ctc_state_v4';
 
 /* ---------- time helpers ---------- */
 function pad(n){ return String(n).padStart(2,'0'); }
@@ -31,6 +31,10 @@ function fmtSigned(min){
   if (r === 0) return '±0분';
   return (r > 0 ? '+' : '') + r + '분';
 }
+// 강의 최종 종료 시각 = 시작 시각 + 강의 전체 계획 시간(시간/분)
+function computeHardEndHM(s){
+  return minutesToHM(hmToMinutes(s.startHM) + (Number(s.hardEndH)||0)*60 + (Number(s.hardEndM)||0));
+}
 
 /* ---------- state ---------- */
 function defaultState(){
@@ -52,7 +56,8 @@ function defaultState(){
     ],
     startHM: '13:30',
     targetHM: '17:10',
-    hardEndHM: '00:00',
+    hardEndH: 4,            // 강의 전체 계획 시간(시작 시각 + 이 시간/분 = 강의 최종 종료 시각)
+    hardEndM: 0,
     phase: 'edit',        // edit -> running -> finished
     actualStartMs: null,
     log: [],               // [{name, planned, doneAtMs, durationMin}]
@@ -228,8 +233,13 @@ function renderEdit(){
           <div class="computed-value">${autoTargetHM}</div>
         </div>
         <div class="field">
-          <label>강의 최종 종료 시각 (참고용, 직접 조정)</label>
-          <input type="time" id="hardEndInput" value="${state.hardEndHM}">
+          <label>강의 전체 계획 시간 (시작 시각 기준, 참고용)</label>
+          <div class="duration-row">
+            <input type="number" id="hardEndHInput" value="${state.hardEndH}" min="0" inputmode="numeric"><span>시간</span>
+            <input type="number" id="hardEndMInput" value="${state.hardEndM}" min="0" max="59" inputmode="numeric"><span>분</span>
+            <span class="duration-arrow">뒤</span>
+          </div>
+          <div class="computed-value" style="margin-top:6px;">강의 최종 종료 ${computeHardEndHM(state)}</div>
         </div>
       </div>
 
@@ -247,7 +257,8 @@ function renderEdit(){
   `;
 
   document.getElementById('startInput').addEventListener('input', e=>{ state.startHM = e.target.value; saveState(); renderEdit(); });
-  document.getElementById('hardEndInput').addEventListener('input', e=>{ state.hardEndHM = e.target.value; saveState(); });
+  document.getElementById('hardEndHInput').addEventListener('input', e=>{ state.hardEndH = Math.max(0, Number(e.target.value)||0); saveState(); renderEdit(); });
+  document.getElementById('hardEndMInput').addEventListener('input', e=>{ state.hardEndM = Math.min(59, Math.max(0, Number(e.target.value)||0)); saveState(); renderEdit(); });
   document.getElementById('nowBtn').addEventListener('click', ()=>{
     state.startHM = msToClock(Date.now());
     saveState();
@@ -372,8 +383,13 @@ function renderRunning(){
         <input type="time" id="targetInputR" value="${state.targetHM}">
       </div>
       <div class="field">
-        <label>강의 최종 종료 시각 (참고용)</label>
-        <input type="time" id="hardEndInputR" value="${state.hardEndHM}">
+        <label>강의 전체 계획 시간 (시작 시각 기준, 참고용)</label>
+        <div class="duration-row">
+          <input type="number" id="hardEndHInputR" value="${state.hardEndH}" min="0" inputmode="numeric"><span>시간</span>
+          <input type="number" id="hardEndMInputR" value="${state.hardEndM}" min="0" max="59" inputmode="numeric"><span>분</span>
+          <span class="duration-arrow">뒤</span>
+        </div>
+        <div class="computed-value" style="margin-top:6px;">강의 최종 종료 ${computeHardEndHM(state)}</div>
       </div>
     </div>
   ` : '';
@@ -415,9 +431,10 @@ function renderRunning(){
     renderRunning();
   });
   if (state.showSettings){
-    document.getElementById('startInputR').addEventListener('input', e=>{ state.startHM = e.target.value; saveState(); });
+    document.getElementById('startInputR').addEventListener('input', e=>{ state.startHM = e.target.value; saveState(); renderRunning(); });
     document.getElementById('targetInputR').addEventListener('input', e=>{ state.targetHM = e.target.value; saveState(); renderRunning(); });
-    document.getElementById('hardEndInputR').addEventListener('input', e=>{ state.hardEndHM = e.target.value; saveState(); });
+    document.getElementById('hardEndHInputR').addEventListener('input', e=>{ state.hardEndH = Math.max(0, Number(e.target.value)||0); saveState(); renderRunning(); });
+    document.getElementById('hardEndMInputR').addEventListener('input', e=>{ state.hardEndM = Math.min(59, Math.max(0, Number(e.target.value)||0)); saveState(); renderRunning(); });
   }
   document.getElementById('addRowBtnR').addEventListener('click', ()=>{
     state.tasks.push({ name: `실습 ${state.tasks.length+1}`, planned: 10 });
