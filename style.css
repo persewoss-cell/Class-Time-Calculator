@@ -84,6 +84,23 @@ body{
 }
 .stat .label{font-size:11px;color:var(--muted);}
 .stat .value{font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;}
+.hardend-box{
+  display:flex;
+  background:var(--card);
+  border-radius:10px;
+  margin-top:8px;
+  overflow:hidden;
+}
+.hardend-seg{
+  flex:1;
+  padding:8px 10px;
+  text-align:center;
+}
+.hardend-seg + .hardend-seg{border-left:1px solid var(--line);}
+.hardend-seg .label{font-size:11px;color:var(--muted);}
+.hardend-seg .value{font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;}
+.hardend-seg .value.ahead{color:var(--ahead);}
+.hardend-seg .value.behind{color:var(--behind);}
 .badge{
   display:inline-block;
   padding:2px 8px;
@@ -102,7 +119,7 @@ body{
   border-radius:14px;
   padding:18px;
 }
-h1{font-size:20px;margin:0 0 6px;}
+h1{font-size:23px;margin:0 0 6px;text-align:center;}
 p.desc{color:var(--muted);font-size:14px;line-height:1.5;margin:0 0 18px;}
 
 .field{margin-bottom:14px;}

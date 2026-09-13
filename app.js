@@ -239,7 +239,7 @@ function renderHome(){
 
   app.innerHTML = `
     <div class="section">
-      <h1>실습 시간 계산기</h1>
+      <h1>강의 시간 계산기</h1>
       <div class="session-box">
         <button class="session-box-body" id="resumeBox">
           <div class="session-box-title">${isFinished ? '수업이 완료됐어요' : `진행 중 · ${escapeHtml(current.name)}`}</div>
@@ -295,8 +295,7 @@ function renderEdit(){
 
   app.innerHTML = `
     <div class="section">
-      <h1>실습 시간 계산기</h1>
-      <p class="desc">실습명과 기준 시간(분)을 직접 입력하세요. 값을 바꿀 때마다 계획 시작~종료 시각이 자동으로 계산돼요.</p>
+      <h1>강의 시간 계산기</h1>
 
       <div class="card">
         <div class="field">
@@ -307,11 +306,11 @@ function renderEdit(){
           </div>
         </div>
         <div class="field">
-          <label>목표 종료 시각 (기준 시간 합계로 자동 계산)</label>
+          <label>강의 계획 시간의 총합계 시각</label>
           <div class="computed-value">${formatClockRel(previewTargetMs, plannedAnchorMs)}</div>
         </div>
         <div class="field">
-          <label>강의 전체 계획 시간 (시작 시각 기준, 참고용)</label>
+          <label>실제 강의 종료 시각</label>
           <div class="duration-row">
             <input type="text" class="duration-input duration-h" id="hardEndHInput" value="${state.hardEndH}" inputmode="numeric" pattern="[0-9]*"><span>시간</span>
             <input type="text" class="duration-input duration-m" id="hardEndMInput" value="${state.hardEndM}" inputmode="numeric" pattern="[0-9]*"><span>분</span>
@@ -324,7 +323,7 @@ function renderEdit(){
       <div class="edit-list">
         ${rowsHtml}
       </div>
-      <button class="btn add-row-btn" id="addRowBtn">+ 실습 추가</button>
+      <button class="btn add-row-btn" id="addRowBtn">+ 강의 계획 시간 추가</button>
 
       <p class="desc" style="margin-top:14px;">기준 시간 합계 ${fmtMin(plannedSum)}</p>
       <div id="errBox" style="color:var(--behind);font-size:13px;"></div>
@@ -415,6 +414,10 @@ function renderRunning(){
   const delay = cumulativeDelayMin();
   const liveOvertime = nowMs > targetMs;
   const untilTargetMin = (targetMs - nowMs)/60000;
+  // 실제 강의 종료 시각(교실을 비워야 하는 시각) 대비, 계획대로면 얼마나 일찍/늦게
+  // 끝나는지를 보여준다. 목표 종료 시각은 시작할 때 고정되므로 이 값도 정적인 지표다.
+  const hardEndMs = state.actualStartMs + ((Number(state.hardEndH)||0)*60 + (Number(state.hardEndM)||0))*60000;
+  const shortenMin = (hardEndMs - targetMs)/60000;
 
   let badgeHtml;
   if (Math.abs(delay) < 0.5) badgeHtml = `<span class="badge even">정시 진행</span>`;
@@ -471,7 +474,7 @@ function renderRunning(){
         <input type="time" id="targetInputR" value="${msToClock(state.targetMs)}">
       </div>
       <div class="field">
-        <label>강의 전체 계획 시간 (시작 시각 기준, 참고용)</label>
+        <label>실제 강의 종료 시각</label>
         <div class="duration-row">
           <input type="text" class="duration-input duration-h" id="hardEndHInputR" value="${state.hardEndH}" inputmode="numeric" pattern="[0-9]*"><span>시간</span>
           <input type="text" class="duration-input duration-m" id="hardEndMInputR" value="${state.hardEndM}" inputmode="numeric" pattern="[0-9]*"><span>분</span>
@@ -497,6 +500,16 @@ function renderRunning(){
         <div class="stat"><div class="label">남은 시간</div><div class="value">${untilTargetMin>=0?fmtMin(untilTargetMin):'초과 '+fmtMin(-untilTargetMin)}</div></div>
         <div class="stat"><div class="label">진행 상태</div><div class="value">${badgeHtml}</div></div>
       </div>
+      <div class="hardend-box">
+        <div class="hardend-seg">
+          <div class="label">실제 강의 종료 시각</div>
+          <div class="value">${formatClockRel(hardEndMs, state.actualStartMs)}</div>
+        </div>
+        <div class="hardend-seg">
+          <div class="label">예상 단축 시간</div>
+          <div class="value ${shortenMin>=0?'ahead':'behind'}">${shortenMin>=0 ? fmtMin(shortenMin)+' 단축' : fmtMin(-shortenMin)+' 초과'}</div>
+        </div>
+      </div>
       ${settingsHtml}
     </div>
     ${liveOvertime ? `<div class="warning-banner">목표 종료 시각을 초과했어요. 완료를 누르면 남은 실습 계획이 다시 계산돼요.</div>` : ''}
@@ -504,7 +517,7 @@ function renderRunning(){
       ${doneHtml}
       ${pendingHtml}
     </div>
-    <button class="btn add-row-btn add-row-btn-inline" id="addRowBtnR">+ 실습 추가</button>
+    <button class="btn add-row-btn add-row-btn-inline" id="addRowBtnR">+ 강의 계획 시간 추가</button>
   `;
 
   document.getElementById('resetBtn').addEventListener('click', resetAll);
