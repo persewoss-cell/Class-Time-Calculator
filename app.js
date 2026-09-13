@@ -351,8 +351,8 @@ function renderEdit(){
             <input type="text" class="eplanned" data-idx="${idx}" value="${t.planned}" inputmode="numeric" pattern="[0-9]*">
             <span>분</span>
           </div>
-          <div class="epreview">계획 ${formatClockRel(p.recStartMs, plannedAnchorMs)}–${formatClockRel(p.recEndMs, plannedAnchorMs)}</div>
         </div>
+        <div class="plan-badge">계획 ${formatClockRel(p.recStartMs, plannedAnchorMs)}–${formatClockRel(p.recEndMs, plannedAnchorMs)}</div>
       </div>
     `;
   }).join('');
@@ -531,11 +531,12 @@ function renderRunning(){
           </div>
           <div class="task-meta">
             기준
-            <input type="text" class="pplanned" data-idx="${idx}" value="${t.planned}" inputmode="numeric" pattern="[0-9]*">
-            분
+            <span class="pplanned-group">
+              <input type="text" class="pplanned" data-idx="${idx}" value="${t.planned}" inputmode="numeric" pattern="[0-9]*">분
+            </span>
             ${deltaMin !== 0 ? `<span class="${deltaCls}">(${fmtSigned(deltaMin)})</span>` : ''}
-            · 계획 ${formatClockRel(t.recStartMs, state.actualStartMs)}–${formatClockRel(t.recEndMs, state.actualStartMs)}
           </div>
+          <div class="plan-badge">계획 ${formatClockRel(t.recStartMs, state.actualStartMs)}–${formatClockRel(t.recEndMs, state.actualStartMs)}</div>
         </div>
         <div class="task-rec">${t.recMin}<small>분</small></div>
         ${isCurrent

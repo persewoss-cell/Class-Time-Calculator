@@ -11,6 +11,7 @@
   --behind-bg:#fee2e2;
   --ahead:#16a34a;
   --ahead-bg:#dcfce7;
+  --plan-bg:#dbeafe;
 }
 @media (prefers-color-scheme: dark){
   :root{
@@ -26,6 +27,7 @@
     --behind-bg:#3b1414;
     --ahead:#4ade80;
     --ahead-bg:#0f2b18;
+    --plan-bg:#132a4d;
   }
 }
 *{box-sizing:border-box;}
@@ -224,7 +226,6 @@ p.desc{color:var(--muted);font-size:14px;line-height:1.5;margin:0 0 18px;}
 .edit-row-bottom{
   display:flex;
   align-items:center;
-  justify-content:space-between;
   gap:8px;
   margin-top:2px;
 }
@@ -239,7 +240,18 @@ p.desc{color:var(--muted);font-size:14px;line-height:1.5;margin:0 0 18px;}
   font-size:14px;
   text-align:center;
 }
-.epreview{font-size:13px;color:var(--muted);white-space:nowrap;}
+/* "계획 HH:MM–HH:MM"은 항상 줄바꿈해서 색이 있는 둥근 네모박스로 보여준다 */
+.plan-badge{
+  display:inline-block;
+  margin-top:6px;
+  padding:4px 10px;
+  border-radius:8px;
+  background:var(--plan-bg);
+  color:var(--accent);
+  font-size:13px;
+  font-weight:600;
+  white-space:nowrap;
+}
 
 .del-btn{
   flex-shrink:0;
@@ -330,6 +342,8 @@ p.desc{color:var(--muted);font-size:14px;line-height:1.5;margin:0 0 18px;}
   padding:2px 0;
 }
 .task-meta{font-size:13px;color:var(--muted);margin-top:3px;display:flex;flex-wrap:wrap;align-items:center;gap:4px;}
+/* input과 "분"이 줄바꿈될 때 서로 떨어지지 않고 항상 붙어 있게 한 덩어리로 묶는다 */
+.pplanned-group{display:inline-flex;align-items:center;gap:4px;white-space:nowrap;}
 .task-meta input.pplanned{
   width:44px;
   border:1px solid var(--line);
