@@ -226,8 +226,7 @@ p.desc{color:var(--muted);font-size:14px;line-height:1.5;margin:0 0 18px;}
 .edit-row-bottom{
   display:flex;
   align-items:center;
-  justify-content:space-between;
-  gap:8px;
+  gap:10px;
   margin-top:2px;
 }
 /* 첫 설정 화면에서는 "계획" 줄을 "분" 옆에 한 줄로 나란히 둔다(진행 화면은 별도 줄 유지) */
