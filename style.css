@@ -124,19 +124,21 @@ p.desc{color:var(--muted);font-size:14px;line-height:1.5;margin:0 0 18px;}
 .duration-row{
   display:flex;
   align-items:center;
-  gap:6px;
+  flex-wrap:nowrap;
+  gap:8px;
 }
-.duration-row input[type="number"]{
-  width:56px;
-  padding:10px 8px;
+.duration-row input.duration-input{
   border-radius:10px;
   border:1px solid var(--line);
   background:var(--bg);
   color:var(--text);
   font-size:16px;
   text-align:center;
+  flex:none;
 }
-.duration-row span{font-size:14px;color:var(--muted);}
+.duration-row input.duration-h{ width:28px; padding:10px 2px; }
+.duration-row input.duration-m{ width:36px; padding:10px 4px; }
+.duration-row span{font-size:14px;color:var(--muted);white-space:nowrap;}
 .duration-row .duration-arrow{margin-left:auto;}
 .computed-value{
   padding:12px;

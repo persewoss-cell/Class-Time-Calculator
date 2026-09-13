@@ -300,8 +300,8 @@ function renderEdit(){
         <div class="field">
           <label>강의 전체 계획 시간 (시작 시각 기준, 참고용)</label>
           <div class="duration-row">
-            <input type="text" id="hardEndHInput" value="${state.hardEndH}" inputmode="numeric" pattern="[0-9]*"><span>시간</span>
-            <input type="text" id="hardEndMInput" value="${state.hardEndM}" inputmode="numeric" pattern="[0-9]*"><span>분</span>
+            <input type="text" class="duration-input duration-h" id="hardEndHInput" value="${state.hardEndH}" inputmode="numeric" pattern="[0-9]*"><span>시간</span>
+            <input type="text" class="duration-input duration-m" id="hardEndMInput" value="${state.hardEndM}" inputmode="numeric" pattern="[0-9]*"><span>분</span>
             <span class="duration-arrow">뒤</span>
           </div>
           <div class="computed-value" style="margin-top:6px;">강의 최종 종료 ${formatClockRel(previewHardEndMs, plannedAnchorMs)}</div>
@@ -458,8 +458,8 @@ function renderRunning(){
       <div class="field">
         <label>강의 전체 계획 시간 (시작 시각 기준, 참고용)</label>
         <div class="duration-row">
-          <input type="text" id="hardEndHInputR" value="${state.hardEndH}" inputmode="numeric" pattern="[0-9]*"><span>시간</span>
-          <input type="text" id="hardEndMInputR" value="${state.hardEndM}" inputmode="numeric" pattern="[0-9]*"><span>분</span>
+          <input type="text" class="duration-input duration-h" id="hardEndHInputR" value="${state.hardEndH}" inputmode="numeric" pattern="[0-9]*"><span>시간</span>
+          <input type="text" class="duration-input duration-m" id="hardEndMInputR" value="${state.hardEndM}" inputmode="numeric" pattern="[0-9]*"><span>분</span>
           <span class="duration-arrow">뒤</span>
         </div>
         <div class="computed-value" style="margin-top:6px;">강의 최종 종료 ${formatClockRel(state.actualStartMs + ((Number(state.hardEndH)||0)*60 + (Number(state.hardEndM)||0))*60000, state.actualStartMs)}</div>
