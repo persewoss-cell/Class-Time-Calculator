@@ -316,7 +316,7 @@ function renderEdit(){
             <input type="text" class="duration-input duration-m" id="hardEndMInput" value="${state.hardEndM}" inputmode="numeric" pattern="[0-9]*"><span>분</span>
             <span class="duration-arrow">뒤</span>
           </div>
-          <div class="computed-value" style="margin-top:6px;">강의 최종 종료 ${formatClockRel(previewHardEndMs, plannedAnchorMs)}</div>
+          <div class="computed-value" style="margin-top:6px;">${formatClockRel(previewHardEndMs, plannedAnchorMs)}(${fmtSigned((previewTargetMs-previewHardEndMs)/60000)})</div>
         </div>
       </div>
 
@@ -325,7 +325,7 @@ function renderEdit(){
       </div>
       <button class="btn add-row-btn" id="addRowBtn">+ 강의 계획 시간 추가</button>
 
-      <p class="desc" style="margin-top:14px;">기준 시간 합계 ${fmtMin(plannedSum)}</p>
+      <p class="desc" style="margin-top:14px;">강의 계획 시간 합계(${fmtMin(plannedSum)})</p>
       <div id="errBox" style="color:var(--behind);font-size:13px;"></div>
     </div>
     <footer class="actions">
@@ -414,10 +414,13 @@ function renderRunning(){
   const delay = cumulativeDelayMin();
   const liveOvertime = nowMs > targetMs;
   const untilTargetMin = (targetMs - nowMs)/60000;
-  // 실제 강의 종료 시각(교실을 비워야 하는 시각) 대비, 계획대로면 얼마나 일찍/늦게
-  // 끝나는지를 보여준다. 목표 종료 시각은 시작할 때 고정되므로 이 값도 정적인 지표다.
+  // 실제 강의 종료 시각(교실을 비워야 하는 시각) 대비 예상 단축 시간.
+  // 목표 종료 시각 자체는 시작할 때 고정되지만, 지금까지 완료한 실습들이
+  // 계획보다 빠르거나 늦었던 만큼(delay)을 반영해야 "빨리 끝내면 단축 시간이
+  // 늘어난다"는 게 보인다. 그래서 정적인 (hardEnd-target)이 아니라 delay를
+  // 뺀 값을 쓴다: 빨리 끝날수록(delay<0) 단축 시간이 늘고, 늦어질수록 준다.
   const hardEndMs = state.actualStartMs + ((Number(state.hardEndH)||0)*60 + (Number(state.hardEndM)||0))*60000;
-  const shortenMin = (hardEndMs - targetMs)/60000;
+  const shortenMin = (hardEndMs - targetMs)/60000 - delay;
 
   let badgeHtml;
   if (Math.abs(delay) < 0.5) badgeHtml = `<span class="badge even">정시 진행</span>`;
