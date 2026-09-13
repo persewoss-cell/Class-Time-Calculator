@@ -145,6 +145,59 @@ function cumulativeDelayMin(){
 const app = document.getElementById('app');
 let tickTimer = null;
 
+// 화면을 다시 그리면 입력 중이던 필드(DOM)가 새로 만들어져 포커스가 풀리고
+// 모바일 숫자 키패드가 닫혀버린다. 다시 그리기 전 포커스/커서 위치를 기억해뒀다가
+// 같은 id(또는 같은 클래스+data-idx) 요소에 그대로 복원해 키패드가 열려있게 한다.
+function rerenderKeepingFocus(renderFn){
+  const active = document.activeElement;
+  let restore = null;
+  if (active && app.contains(active) && active.tagName === 'INPUT'){
+    let selStart = null, selEnd = null;
+    try { selStart = active.selectionStart; selEnd = active.selectionEnd; } catch(e){}
+    restore = {
+      id: active.id || null,
+      cls: active.className ? active.className.trim().split(/\s+/)[0] : null,
+      idx: active.dataset ? active.dataset.idx : undefined,
+      selStart, selEnd
+    };
+  }
+  renderFn();
+  if (restore){
+    const el = restore.id
+      ? document.getElementById(restore.id)
+      : (restore.cls && restore.idx !== undefined ? app.querySelector(`.${restore.cls}[data-idx="${restore.idx}"]`) : null);
+    if (el){
+      el.focus();
+      if (restore.selStart != null && el.setSelectionRange){
+        try { el.setSelectionRange(restore.selStart, restore.selEnd); } catch(e){}
+      }
+    }
+  }
+}
+
+// 숫자 입력칸: 타이핑 중(빈 값 등 중간 상태)에는 값을 강제로 고치지 않고 그대로 두어
+// 여러 자리를 이어서 입력하거나 지우고 다시 쓸 수 있게 하고, 포커스를 벗어날 때만
+// 최소/최대 범위로 정리한다.
+function bindNumberInput(el, { min = 0, max = Infinity, fallback = min, onChange, rerenderFn }){
+  el.addEventListener('input', e=>{
+    const raw = e.target.value;
+    if (raw === '' || !/^\d+$/.test(raw)) return;
+    onChange(Math.min(max, Math.max(min, Number(raw))));
+    saveState();
+    rerenderKeepingFocus(rerenderFn);
+  });
+  el.addEventListener('blur', e=>{
+    const raw = e.target.value;
+    const v = (raw === '' || !/^\d+$/.test(raw)) ? fallback : Math.min(max, Math.max(min, Number(raw)));
+    onChange(v);
+    saveState();
+    rerenderFn();
+  });
+  el.addEventListener('keydown', e=>{
+    if (e.key === 'Enter'){ e.preventDefault(); e.target.blur(); }
+  });
+}
+
 function render(){
   if (tickTimer) clearInterval(tickTimer);
   if (state.phase === 'running' && state.currentIndex >= state.tasks.length){
@@ -206,7 +259,7 @@ function renderEdit(){
         </div>
         <div class="edit-row-bottom">
           <div class="eplan">
-            <input type="number" class="eplanned" data-idx="${idx}" value="${t.planned}" min="1" inputmode="numeric">
+            <input type="text" class="eplanned" data-idx="${idx}" value="${t.planned}" inputmode="numeric" pattern="[0-9]*">
             <span>분</span>
           </div>
           <div class="epreview">계획 ${msToClock(p.recStartMs)}–${msToClock(p.recEndMs)}</div>
@@ -235,8 +288,8 @@ function renderEdit(){
         <div class="field">
           <label>강의 전체 계획 시간 (시작 시각 기준, 참고용)</label>
           <div class="duration-row">
-            <input type="number" id="hardEndHInput" value="${state.hardEndH}" min="0" inputmode="numeric"><span>시간</span>
-            <input type="number" id="hardEndMInput" value="${state.hardEndM}" min="0" max="59" inputmode="numeric"><span>분</span>
+            <input type="text" id="hardEndHInput" value="${state.hardEndH}" inputmode="numeric" pattern="[0-9]*"><span>시간</span>
+            <input type="text" id="hardEndMInput" value="${state.hardEndM}" inputmode="numeric" pattern="[0-9]*"><span>분</span>
             <span class="duration-arrow">뒤</span>
           </div>
           <div class="computed-value" style="margin-top:6px;">강의 최종 종료 ${computeHardEndHM(state)}</div>
@@ -257,8 +310,15 @@ function renderEdit(){
   `;
 
   document.getElementById('startInput').addEventListener('input', e=>{ state.startHM = e.target.value; saveState(); renderEdit(); });
-  document.getElementById('hardEndHInput').addEventListener('input', e=>{ state.hardEndH = Math.max(0, Number(e.target.value)||0); saveState(); renderEdit(); });
-  document.getElementById('hardEndMInput').addEventListener('input', e=>{ state.hardEndM = Math.min(59, Math.max(0, Number(e.target.value)||0)); saveState(); renderEdit(); });
+  const hardEndHInput = document.getElementById('hardEndHInput');
+  const hardEndMInput = document.getElementById('hardEndMInput');
+  hardEndHInput.setAttribute('enterkeyhint', 'next');
+  hardEndMInput.setAttribute('enterkeyhint', 'done');
+  bindNumberInput(hardEndHInput, { min: 0, fallback: 0, onChange: v=>{ state.hardEndH = v; }, rerenderFn: renderEdit });
+  bindNumberInput(hardEndMInput, { min: 0, max: 59, fallback: 0, onChange: v=>{ state.hardEndM = v; }, rerenderFn: renderEdit });
+  hardEndHInput.addEventListener('keydown', e=>{
+    if (e.key === 'Enter') document.getElementById('hardEndMInput').focus();
+  });
   document.getElementById('nowBtn').addEventListener('click', ()=>{
     state.startHM = msToClock(Date.now());
     saveState();
@@ -276,11 +336,11 @@ function renderEdit(){
     });
   });
   app.querySelectorAll('.eplanned').forEach(el=>{
-    el.addEventListener('input', e=>{
-      const v = Math.max(1, Number(e.target.value) || 1);
-      state.tasks[+e.target.dataset.idx].planned = v;
-      saveState();
-      renderEdit();
+    el.setAttribute('enterkeyhint', 'done');
+    bindNumberInput(el, {
+      min: 1, fallback: 1,
+      onChange: v=>{ state.tasks[+el.dataset.idx].planned = v; },
+      rerenderFn: renderEdit
     });
   });
   app.querySelectorAll('.del-btn').forEach(el=>{
@@ -358,7 +418,7 @@ function renderRunning(){
           </div>
           <div class="task-meta">
             기준
-            <input type="number" class="pplanned" data-idx="${idx}" value="${t.planned}" min="1" inputmode="numeric">
+            <input type="text" class="pplanned" data-idx="${idx}" value="${t.planned}" inputmode="numeric" pattern="[0-9]*">
             분
             ${deltaMin !== 0 ? `<span class="${deltaCls}">(${fmtSigned(deltaMin)})</span>` : ''}
             · 계획 ${msToClock(t.recStartMs)}–${msToClock(t.recEndMs)}
@@ -385,8 +445,8 @@ function renderRunning(){
       <div class="field">
         <label>강의 전체 계획 시간 (시작 시각 기준, 참고용)</label>
         <div class="duration-row">
-          <input type="number" id="hardEndHInputR" value="${state.hardEndH}" min="0" inputmode="numeric"><span>시간</span>
-          <input type="number" id="hardEndMInputR" value="${state.hardEndM}" min="0" max="59" inputmode="numeric"><span>분</span>
+          <input type="text" id="hardEndHInputR" value="${state.hardEndH}" inputmode="numeric" pattern="[0-9]*"><span>시간</span>
+          <input type="text" id="hardEndMInputR" value="${state.hardEndM}" inputmode="numeric" pattern="[0-9]*"><span>분</span>
           <span class="duration-arrow">뒤</span>
         </div>
         <div class="computed-value" style="margin-top:6px;">강의 최종 종료 ${computeHardEndHM(state)}</div>
@@ -433,8 +493,15 @@ function renderRunning(){
   if (state.showSettings){
     document.getElementById('startInputR').addEventListener('input', e=>{ state.startHM = e.target.value; saveState(); renderRunning(); });
     document.getElementById('targetInputR').addEventListener('input', e=>{ state.targetHM = e.target.value; saveState(); renderRunning(); });
-    document.getElementById('hardEndHInputR').addEventListener('input', e=>{ state.hardEndH = Math.max(0, Number(e.target.value)||0); saveState(); renderRunning(); });
-    document.getElementById('hardEndMInputR').addEventListener('input', e=>{ state.hardEndM = Math.min(59, Math.max(0, Number(e.target.value)||0)); saveState(); renderRunning(); });
+    const hardEndHInputR = document.getElementById('hardEndHInputR');
+    const hardEndMInputR = document.getElementById('hardEndMInputR');
+    hardEndHInputR.setAttribute('enterkeyhint', 'next');
+    hardEndMInputR.setAttribute('enterkeyhint', 'done');
+    bindNumberInput(hardEndHInputR, { min: 0, fallback: 0, onChange: v=>{ state.hardEndH = v; }, rerenderFn: renderRunning });
+    bindNumberInput(hardEndMInputR, { min: 0, max: 59, fallback: 0, onChange: v=>{ state.hardEndM = v; }, rerenderFn: renderRunning });
+    hardEndHInputR.addEventListener('keydown', e=>{
+      if (e.key === 'Enter') document.getElementById('hardEndMInputR').focus();
+    });
   }
   document.getElementById('addRowBtnR').addEventListener('click', ()=>{
     state.tasks.push({ name: `실습 ${state.tasks.length+1}`, planned: 10 });
@@ -448,11 +515,11 @@ function renderRunning(){
     });
   });
   app.querySelectorAll('.pplanned').forEach(el=>{
-    el.addEventListener('input', e=>{
-      const v = Math.max(1, Number(e.target.value) || 1);
-      state.tasks[state.currentIndex + (+e.target.dataset.idx)].planned = v;
-      saveState();
-      renderRunning();
+    el.setAttribute('enterkeyhint', 'done');
+    bindNumberInput(el, {
+      min: 1, fallback: 1,
+      onChange: v=>{ state.tasks[state.currentIndex + (+el.dataset.idx)].planned = v; },
+      rerenderFn: renderRunning
     });
   });
   app.querySelectorAll('.del-btn.small').forEach(el=>{
