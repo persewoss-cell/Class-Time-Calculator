@@ -352,8 +352,8 @@ function renderEdit(){
             <input type="text" class="eplanned" data-idx="${idx}" value="${t.planned}" inputmode="numeric" pattern="[0-9]*">
             <span>분</span>
           </div>
+          <div class="plan-badge"><span class="plan-tag">계획</span>${formatClockRel(p.recStartMs, plannedAnchorMs)}–${formatClockRel(p.recEndMs, plannedAnchorMs)}</div>
         </div>
-        <div class="plan-badge"><span class="plan-tag">계획</span>${formatClockRel(p.recStartMs, plannedAnchorMs)}–${formatClockRel(p.recEndMs, plannedAnchorMs)}</div>
       </div>
     `;
   }).join('');
