@@ -155,6 +155,9 @@ let tickTimer = null;
 // 화면을 다시 그리면 입력 중이던 필드(DOM)가 새로 만들어져 포커스가 풀리고
 // 모바일 숫자 키패드가 닫혀버린다. 다시 그리기 전 포커스/커서 위치를 기억해뒀다가
 // 같은 id(또는 같은 클래스+data-idx) 요소에 그대로 복원해 키패드가 열려있게 한다.
+// restoringFocus는 이 복원용 focus()인지(그대로 이어 입력) 사용자가 직접 탭한
+// focus인지(전체 선택해서 새로 입력) 구분하는 데 쓰인다.
+let restoringFocus = false;
 function rerenderKeepingFocus(renderFn){
   const active = document.activeElement;
   let restore = null;
@@ -174,12 +177,22 @@ function rerenderKeepingFocus(renderFn){
       ? document.getElementById(restore.id)
       : (restore.cls && restore.idx !== undefined ? app.querySelector(`.${restore.cls}[data-idx="${restore.idx}"]`) : null);
     if (el){
+      restoringFocus = true;
       el.focus();
+      restoringFocus = false;
       if (restore.selStart != null && el.setSelectionRange){
         try { el.setSelectionRange(restore.selStart, restore.selEnd); } catch(e){}
       }
     }
   }
+}
+
+// 시/분 칸을 새로 탭했을 때는 기존 숫자를 전체 선택해서, 이어서 입력하는 게 아니라
+// 새로 친 숫자로 통째로 바뀌게 한다. 다시 그리기용 focus() 복원 때는 select하지 않는다.
+function selectAllOnFreshFocus(el){
+  el.addEventListener('focus', ()=>{
+    if (!restoringFocus) el.select();
+  });
 }
 
 // 숫자 입력칸: 타이핑 중(빈 값 등 중간 상태)에는 값을 강제로 고치지 않고 그대로 두어
@@ -328,6 +341,8 @@ function renderEdit(){
   hardEndMInput.setAttribute('enterkeyhint', 'done');
   bindNumberInput(hardEndHInput, { min: 0, fallback: 0, onChange: v=>{ state.hardEndH = v; }, rerenderFn: renderEdit });
   bindNumberInput(hardEndMInput, { min: 0, max: 59, fallback: 0, onChange: v=>{ state.hardEndM = v; }, rerenderFn: renderEdit });
+  selectAllOnFreshFocus(hardEndHInput);
+  selectAllOnFreshFocus(hardEndMInput);
   hardEndHInput.addEventListener('keydown', e=>{
     if (e.key === 'Enter') document.getElementById('hardEndMInput').focus();
   });
@@ -517,6 +532,8 @@ function renderRunning(){
     hardEndMInputR.setAttribute('enterkeyhint', 'done');
     bindNumberInput(hardEndHInputR, { min: 0, fallback: 0, onChange: v=>{ state.hardEndH = v; }, rerenderFn: renderRunning });
     bindNumberInput(hardEndMInputR, { min: 0, max: 59, fallback: 0, onChange: v=>{ state.hardEndM = v; }, rerenderFn: renderRunning });
+    selectAllOnFreshFocus(hardEndHInputR);
+    selectAllOnFreshFocus(hardEndMInputR);
     hardEndHInputR.addEventListener('keydown', e=>{
       if (e.key === 'Enter') document.getElementById('hardEndMInputR').focus();
     });
