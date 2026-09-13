@@ -318,6 +318,7 @@ function renderHome(){
     state.away = false;
     saveState();
     render();
+    window.scrollTo(0, 0);
   });
   document.getElementById('trashBtn').addEventListener('click', ()=>{
     if (!confirm('진행 중인 수업 기록을 삭제할까요? 되돌릴 수 없어요.')) return;
@@ -400,7 +401,7 @@ function renderEdit(){
       <div id="errBox" style="color:var(--behind);font-size:13px;"></div>
     </div>
     <footer class="actions">
-      <button class="btn btn-primary" id="startBtn">수업 시작</button>
+      <button class="btn btn-primary" id="startBtn">강의 시작</button>
     </footer>
   `;
 
@@ -477,6 +478,9 @@ function renderEdit(){
     state.phase = 'running';
     saveState();
     render();
+    // 표를 아래쪽까지 스크롤한 채로 강의를 시작해도 진행 화면은 맨 위(현재 시각,
+    // 목표/남은 시간)부터 보이도록 스크롤을 초기화한다.
+    window.scrollTo(0, 0);
   });
 }
 
@@ -735,6 +739,7 @@ function renderFinished(){
     state.currentIndex = 0;
     saveState();
     render();
+    window.scrollTo(0, 0);
   });
   document.getElementById('editBtn').addEventListener('click', ()=>{
     state.phase = 'edit';
