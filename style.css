@@ -240,17 +240,23 @@ p.desc{color:var(--muted);font-size:14px;line-height:1.5;margin:0 0 18px;}
   font-size:14px;
   text-align:center;
 }
-/* "계획 HH:MM–HH:MM"은 항상 줄바꿈해서 색이 있는 둥근 네모박스로 보여준다 */
+/* "계획 HH:MM–HH:MM" 줄은 항상 줄바꿈하되, "계획"이라는 단어만 색 있는
+   둥근 네모박스(태그)로 보여주고 시간 부분은 평범한 텍스트로 둔다 */
 .plan-badge{
-  display:inline-block;
+  display:block;
   margin-top:6px;
-  padding:4px 10px;
+  font-size:13px;
+  color:var(--muted);
+  white-space:nowrap;
+}
+.plan-tag{
+  display:inline-block;
+  padding:2px 8px;
   border-radius:8px;
   background:var(--plan-bg);
   color:var(--accent);
-  font-size:13px;
   font-weight:600;
-  white-space:nowrap;
+  margin-right:4px;
 }
 
 .del-btn{

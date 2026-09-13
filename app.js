@@ -352,7 +352,7 @@ function renderEdit(){
             <span>분</span>
           </div>
         </div>
-        <div class="plan-badge">계획 ${formatClockRel(p.recStartMs, plannedAnchorMs)}–${formatClockRel(p.recEndMs, plannedAnchorMs)}</div>
+        <div class="plan-badge"><span class="plan-tag">계획</span>${formatClockRel(p.recStartMs, plannedAnchorMs)}–${formatClockRel(p.recEndMs, plannedAnchorMs)}</div>
       </div>
     `;
   }).join('');
@@ -536,7 +536,7 @@ function renderRunning(){
             </span>
             ${deltaMin !== 0 ? `<span class="${deltaCls}">(${fmtSigned(deltaMin)})</span>` : ''}
           </div>
-          <div class="plan-badge">계획 ${formatClockRel(t.recStartMs, state.actualStartMs)}–${formatClockRel(t.recEndMs, state.actualStartMs)}</div>
+          <div class="plan-badge"><span class="plan-tag">계획</span>${formatClockRel(t.recStartMs, state.actualStartMs)}–${formatClockRel(t.recEndMs, state.actualStartMs)}</div>
         </div>
         <div class="task-rec">${t.recMin}<small>분</small></div>
         ${isCurrent
