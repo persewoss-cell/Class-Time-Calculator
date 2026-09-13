@@ -10,9 +10,18 @@ function hmToTodayMs(hm){
   d.setHours(h||0, m||0, 0, 0);
   return d.getTime();
 }
-function msToClock(ms){
+// 상태 저장·<input type="time">용 24시간제 "HH:MM" (내부 데이터 형식, 화면 표시에는 쓰지 않는다)
+function msToHM24(ms){
   const d = new Date(ms);
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+// 화면에 보여줄 때 쓰는 오전/오후 12시간제 표기
+function msToClock(ms){
+  const d = new Date(ms);
+  const h24 = d.getHours();
+  const period = h24 < 12 ? '오전' : '오후';
+  const h12 = h24 % 12 || 12;
+  return `${period} ${h12}:${pad(d.getMinutes())}`;
 }
 function fmtMin(min){
   const r = Math.round(min);
@@ -416,7 +425,7 @@ function renderEdit(){
     if (e.key === 'Enter') document.getElementById('hardEndAbsMInput').focus();
   });
   document.getElementById('nowBtn').addEventListener('click', ()=>{
-    state.startHM = msToClock(Date.now());
+    state.startHM = msToHM24(Date.now());
     saveState();
     renderEdit();
   });
@@ -461,7 +470,7 @@ function renderEdit(){
     const sum = cleaned.reduce((s,t)=>s+t.planned,0);
     state.targetMs = hmToTodayMs(state.startHM) + sum*60000;
     const now = Date.now();
-    state.startHM = msToClock(now);
+    state.startHM = msToHM24(now);
     state.actualStartMs = now;
     state.log = [];
     state.currentIndex = 0;
@@ -544,7 +553,7 @@ function renderRunning(){
       </div>
       <div class="field">
         <label>목표 종료 시각</label>
-        <input type="time" id="targetInputR" value="${msToClock(state.targetMs)}">
+        <input type="time" id="targetInputR" value="${msToHM24(state.targetMs)}">
       </div>
       <div class="field">
         <label>실제 강의 종료 시각</label>
@@ -719,7 +728,7 @@ function renderFinished(){
   document.getElementById('restartBtn').addEventListener('click', ()=>{
     state.phase = 'running';
     const now = Date.now();
-    state.startHM = msToClock(now);
+    state.startHM = msToHM24(now);
     state.actualStartMs = now;
     state.log = [];
     state.currentIndex = 0;
