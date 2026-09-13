@@ -157,6 +157,7 @@ p.desc{color:var(--muted);font-size:14px;line-height:1.5;margin:0 0 18px;}
 .duration-row input.duration-m{ width:36px; padding:10px 4px; }
 .duration-row span{font-size:14px;color:var(--muted);white-space:nowrap;}
 .duration-row .duration-arrow{margin-left:auto;}
+.duration-or{font-size:12px;color:var(--muted);margin:6px 0;text-align:center;}
 .computed-value{
   padding:12px;
   border-radius:10px;

@@ -63,8 +63,12 @@ function defaultState(){
     ],
     startHM: '13:30',
     targetMs: null,         // 목표 종료 시각(절대 ms). 수업 시작 시 확정되어 자정을 넘겨도 정확하다.
-    hardEndH: 3,            // 강의 전체 계획 시간(시작 시각 + 이 시간/분 = 강의 최종 종료 시각)
-    hardEndM: 50,
+    // 실제 강의 종료 시각은 "N시간 M분 뒤"(hardEndH/M) 또는 "몇 시 몇 분"(hardEndAbsH/M)
+    // 둘 중 한 가지 방법으로만 입력한다. 전부 빈 문자열이면 미설정 상태.
+    hardEndH: '',
+    hardEndM: '',
+    hardEndAbsH: '',
+    hardEndAbsM: '',
     phase: 'edit',        // edit -> running -> finished
     actualStartMs: null,
     log: [],               // [{name, planned, doneAtMs, durationMin}]
@@ -137,6 +141,35 @@ function distribute(tasks, anchorMs, targetMs){
   });
 
   return { items, remainingBudgetMin: budgetRaw, overtime };
+}
+
+// 실제 강의 종료 시각은 "N시간 M분 뒤"(hardEndH/M) 또는 "몇 시 몇 분"(hardEndAbsH/M)
+// 둘 중 하나로만 정할 수 있다. 한쪽 방법의 칸이 하나만 채워졌거나, 두 방법이
+// 동시에 채워졌으면 에러를 반환하고, 둘 다 비어있으면 미설정(ms:null)으로 둔다.
+function computeHardEndInfo(anchorMs){
+  const durH = state.hardEndH, durM = state.hardEndM;
+  const absH = state.hardEndAbsH, absM = state.hardEndAbsM;
+  const durEngaged = durH !== '' || durM !== '';
+  const durComplete = durH !== '' && durM !== '';
+  const absEngaged = absH !== '' || absM !== '';
+  const absComplete = absH !== '' && absM !== '';
+
+  if (durEngaged && absEngaged){
+    return { ms: null, error: '"N시간 M분 뒤"와 "몇 시 몇 분" 중 하나만 입력해주세요.' };
+  }
+  if (durEngaged && !durComplete){
+    return { ms: null, error: '시간과 분을 모두 입력해주세요.' };
+  }
+  if (absEngaged && !absComplete){
+    return { ms: null, error: '시와 분을 모두 입력해주세요.' };
+  }
+  if (durComplete){
+    return { ms: anchorMs + (Number(durH)*60 + Number(durM))*60000 };
+  }
+  if (absComplete){
+    return { ms: resolveTimeOnOrAfter(`${absH}:${absM}`, anchorMs) };
+  }
+  return { ms: null };
 }
 
 function cumulativeDelayMin(){
@@ -218,6 +251,28 @@ function bindNumberInput(el, { min = 0, max = Infinity, fallback = min, onChange
   });
 }
 
+// bindNumberInput과 달리 빈 값을 그대로 허용한다("입력 안 함" 자체가 유효한 상태).
+// 실제 강의 종료 시각의 두 입력 방법(시간/분 뒤, 몇 시 몇 분)처럼 값이 없어도
+// 되는 칸에 쓴다.
+function bindOptionalNumberInput(el, { max = Infinity, onChange, rerenderFn }){
+  const clamp = raw => (raw === '' || !/^\d+$/.test(raw)) ? '' : Math.min(max, Number(raw));
+  el.addEventListener('input', e=>{
+    const raw = e.target.value;
+    if (raw !== '' && !/^\d+$/.test(raw)) return;
+    onChange(clamp(raw));
+    saveState();
+    rerenderKeepingFocus(rerenderFn);
+  });
+  el.addEventListener('blur', e=>{
+    onChange(clamp(e.target.value));
+    saveState();
+    rerenderFn();
+  });
+  el.addEventListener('keydown', e=>{
+    if (e.key === 'Enter'){ e.preventDefault(); e.target.blur(); }
+  });
+}
+
 function render(){
   if (tickTimer) clearInterval(tickTimer);
   if (state.phase === 'running' && state.currentIndex >= state.tasks.length){
@@ -271,7 +326,7 @@ function renderEdit(){
   // 자정을 넘기는 일정(예: 21시 시작 → 다음날 01시 종료)도 날짜가 저절로 넘어간다.
   const plannedAnchorMs = hmToTodayMs(state.startHM);
   const previewTargetMs = plannedAnchorMs + plannedSum*60000;
-  const previewHardEndMs = plannedAnchorMs + ((Number(state.hardEndH)||0)*60 + (Number(state.hardEndM)||0))*60000;
+  const hardEndInfo = computeHardEndInfo(plannedAnchorMs);
   const preview = distribute(state.tasks, plannedAnchorMs, previewTargetMs);
 
   const rowsHtml = state.tasks.map((t, idx)=>{
@@ -312,11 +367,20 @@ function renderEdit(){
         <div class="field">
           <label>실제 강의 종료 시각</label>
           <div class="duration-row">
-            <input type="text" class="duration-input duration-h" id="hardEndHInput" value="${state.hardEndH}" inputmode="numeric" pattern="[0-9]*"><span>시간</span>
-            <input type="text" class="duration-input duration-m" id="hardEndMInput" value="${state.hardEndM}" inputmode="numeric" pattern="[0-9]*"><span>분</span>
+            <input type="text" class="duration-input duration-h" id="hardEndHInput" value="${state.hardEndH}" placeholder="0" inputmode="numeric" pattern="[0-9]*"><span>시간</span>
+            <input type="text" class="duration-input duration-m" id="hardEndMInput" value="${state.hardEndM}" placeholder="0" inputmode="numeric" pattern="[0-9]*"><span>분</span>
             <span class="duration-arrow">뒤</span>
           </div>
-          <div class="computed-value" style="margin-top:6px;">${formatClockRel(previewHardEndMs, plannedAnchorMs)}(${fmtSigned((previewTargetMs-previewHardEndMs)/60000)})</div>
+          <div class="duration-or">또는</div>
+          <div class="duration-row">
+            <input type="text" class="duration-input duration-h" id="hardEndAbsHInput" value="${state.hardEndAbsH}" placeholder="0" inputmode="numeric" pattern="[0-9]*"><span>시</span>
+            <input type="text" class="duration-input duration-m" id="hardEndAbsMInput" value="${state.hardEndAbsM}" placeholder="0" inputmode="numeric" pattern="[0-9]*"><span>분</span>
+          </div>
+          ${hardEndInfo.error
+            ? `<div class="computed-value" style="margin-top:6px;color:var(--behind);">${hardEndInfo.error}</div>`
+            : hardEndInfo.ms != null
+              ? `<div class="computed-value" style="margin-top:6px;">${formatClockRel(hardEndInfo.ms, plannedAnchorMs)}(${fmtSigned((previewTargetMs-hardEndInfo.ms)/60000)})</div>`
+              : ''}
         </div>
       </div>
 
@@ -336,14 +400,22 @@ function renderEdit(){
   document.getElementById('startInput').addEventListener('input', e=>{ state.startHM = e.target.value; saveState(); renderEdit(); });
   const hardEndHInput = document.getElementById('hardEndHInput');
   const hardEndMInput = document.getElementById('hardEndMInput');
+  const hardEndAbsHInput = document.getElementById('hardEndAbsHInput');
+  const hardEndAbsMInput = document.getElementById('hardEndAbsMInput');
   hardEndHInput.setAttribute('enterkeyhint', 'next');
   hardEndMInput.setAttribute('enterkeyhint', 'done');
-  bindNumberInput(hardEndHInput, { min: 0, fallback: 0, onChange: v=>{ state.hardEndH = v; }, rerenderFn: renderEdit });
-  bindNumberInput(hardEndMInput, { min: 0, max: 59, fallback: 0, onChange: v=>{ state.hardEndM = v; }, rerenderFn: renderEdit });
-  selectAllOnFreshFocus(hardEndHInput);
-  selectAllOnFreshFocus(hardEndMInput);
+  hardEndAbsHInput.setAttribute('enterkeyhint', 'next');
+  hardEndAbsMInput.setAttribute('enterkeyhint', 'done');
+  bindOptionalNumberInput(hardEndHInput, { onChange: v=>{ state.hardEndH = v; }, rerenderFn: renderEdit });
+  bindOptionalNumberInput(hardEndMInput, { max: 59, onChange: v=>{ state.hardEndM = v; }, rerenderFn: renderEdit });
+  bindOptionalNumberInput(hardEndAbsHInput, { max: 23, onChange: v=>{ state.hardEndAbsH = v; }, rerenderFn: renderEdit });
+  bindOptionalNumberInput(hardEndAbsMInput, { max: 59, onChange: v=>{ state.hardEndAbsM = v; }, rerenderFn: renderEdit });
+  [hardEndHInput, hardEndMInput, hardEndAbsHInput, hardEndAbsMInput].forEach(selectAllOnFreshFocus);
   hardEndHInput.addEventListener('keydown', e=>{
     if (e.key === 'Enter') document.getElementById('hardEndMInput').focus();
+  });
+  hardEndAbsHInput.addEventListener('keydown', e=>{
+    if (e.key === 'Enter') document.getElementById('hardEndAbsMInput').focus();
   });
   document.getElementById('nowBtn').addEventListener('click', ()=>{
     state.startHM = msToClock(Date.now());
@@ -419,8 +491,8 @@ function renderRunning(){
   // 계획보다 빠르거나 늦었던 만큼(delay)을 반영해야 "빨리 끝내면 단축 시간이
   // 늘어난다"는 게 보인다. 그래서 정적인 (hardEnd-target)이 아니라 delay를
   // 뺀 값을 쓴다: 빨리 끝날수록(delay<0) 단축 시간이 늘고, 늦어질수록 준다.
-  const hardEndMs = state.actualStartMs + ((Number(state.hardEndH)||0)*60 + (Number(state.hardEndM)||0))*60000;
-  const shortenMin = (hardEndMs - targetMs)/60000 - delay;
+  const hardEndInfo = computeHardEndInfo(state.actualStartMs);
+  const shortenMin = hardEndInfo.ms != null ? (hardEndInfo.ms - targetMs)/60000 - delay : null;
 
   let badgeHtml;
   if (Math.abs(delay) < 0.5) badgeHtml = `<span class="badge even">정시 진행</span>`;
@@ -479,11 +551,20 @@ function renderRunning(){
       <div class="field">
         <label>실제 강의 종료 시각</label>
         <div class="duration-row">
-          <input type="text" class="duration-input duration-h" id="hardEndHInputR" value="${state.hardEndH}" inputmode="numeric" pattern="[0-9]*"><span>시간</span>
-          <input type="text" class="duration-input duration-m" id="hardEndMInputR" value="${state.hardEndM}" inputmode="numeric" pattern="[0-9]*"><span>분</span>
+          <input type="text" class="duration-input duration-h" id="hardEndHInputR" value="${state.hardEndH}" placeholder="0" inputmode="numeric" pattern="[0-9]*"><span>시간</span>
+          <input type="text" class="duration-input duration-m" id="hardEndMInputR" value="${state.hardEndM}" placeholder="0" inputmode="numeric" pattern="[0-9]*"><span>분</span>
           <span class="duration-arrow">뒤</span>
         </div>
-        <div class="computed-value" style="margin-top:6px;">강의 최종 종료 ${formatClockRel(state.actualStartMs + ((Number(state.hardEndH)||0)*60 + (Number(state.hardEndM)||0))*60000, state.actualStartMs)}</div>
+        <div class="duration-or">또는</div>
+        <div class="duration-row">
+          <input type="text" class="duration-input duration-h" id="hardEndAbsHInputR" value="${state.hardEndAbsH}" placeholder="0" inputmode="numeric" pattern="[0-9]*"><span>시</span>
+          <input type="text" class="duration-input duration-m" id="hardEndAbsMInputR" value="${state.hardEndAbsM}" placeholder="0" inputmode="numeric" pattern="[0-9]*"><span>분</span>
+        </div>
+        ${hardEndInfo.error
+          ? `<div class="computed-value" style="margin-top:6px;color:var(--behind);">${hardEndInfo.error}</div>`
+          : hardEndInfo.ms != null
+            ? `<div class="computed-value" style="margin-top:6px;">${formatClockRel(hardEndInfo.ms, state.actualStartMs)}(${fmtSigned((targetMs-hardEndInfo.ms)/60000)})</div>`
+            : ''}
       </div>
     </div>
   ` : '';
@@ -503,16 +584,18 @@ function renderRunning(){
         <div class="stat"><div class="label">남은 시간</div><div class="value">${untilTargetMin>=0?fmtMin(untilTargetMin):'초과 '+fmtMin(-untilTargetMin)}</div></div>
         <div class="stat"><div class="label">진행 상태</div><div class="value">${badgeHtml}</div></div>
       </div>
+      ${shortenMin != null ? `
       <div class="hardend-box">
         <div class="hardend-seg">
           <div class="label">실제 강의 종료 시각</div>
-          <div class="value">${formatClockRel(hardEndMs, state.actualStartMs)}</div>
+          <div class="value">${formatClockRel(hardEndInfo.ms, state.actualStartMs)}</div>
         </div>
         <div class="hardend-seg">
           <div class="label">예상 단축 시간</div>
           <div class="value ${shortenMin>=0?'ahead':'behind'}">${shortenMin>=0 ? fmtMin(shortenMin)+' 단축' : fmtMin(-shortenMin)+' 초과'}</div>
         </div>
       </div>
+      ` : ''}
       ${settingsHtml}
     </div>
     ${liveOvertime ? `<div class="warning-banner">목표 종료 시각을 초과했어요. 완료를 누르면 남은 실습 계획이 다시 계산돼요.</div>` : ''}
@@ -544,14 +627,22 @@ function renderRunning(){
     });
     const hardEndHInputR = document.getElementById('hardEndHInputR');
     const hardEndMInputR = document.getElementById('hardEndMInputR');
+    const hardEndAbsHInputR = document.getElementById('hardEndAbsHInputR');
+    const hardEndAbsMInputR = document.getElementById('hardEndAbsMInputR');
     hardEndHInputR.setAttribute('enterkeyhint', 'next');
     hardEndMInputR.setAttribute('enterkeyhint', 'done');
-    bindNumberInput(hardEndHInputR, { min: 0, fallback: 0, onChange: v=>{ state.hardEndH = v; }, rerenderFn: renderRunning });
-    bindNumberInput(hardEndMInputR, { min: 0, max: 59, fallback: 0, onChange: v=>{ state.hardEndM = v; }, rerenderFn: renderRunning });
-    selectAllOnFreshFocus(hardEndHInputR);
-    selectAllOnFreshFocus(hardEndMInputR);
+    hardEndAbsHInputR.setAttribute('enterkeyhint', 'next');
+    hardEndAbsMInputR.setAttribute('enterkeyhint', 'done');
+    bindOptionalNumberInput(hardEndHInputR, { onChange: v=>{ state.hardEndH = v; }, rerenderFn: renderRunning });
+    bindOptionalNumberInput(hardEndMInputR, { max: 59, onChange: v=>{ state.hardEndM = v; }, rerenderFn: renderRunning });
+    bindOptionalNumberInput(hardEndAbsHInputR, { max: 23, onChange: v=>{ state.hardEndAbsH = v; }, rerenderFn: renderRunning });
+    bindOptionalNumberInput(hardEndAbsMInputR, { max: 59, onChange: v=>{ state.hardEndAbsM = v; }, rerenderFn: renderRunning });
+    [hardEndHInputR, hardEndMInputR, hardEndAbsHInputR, hardEndAbsMInputR].forEach(selectAllOnFreshFocus);
     hardEndHInputR.addEventListener('keydown', e=>{
       if (e.key === 'Enter') document.getElementById('hardEndMInputR').focus();
+    });
+    hardEndAbsHInputR.addEventListener('keydown', e=>{
+      if (e.key === 'Enter') document.getElementById('hardEndAbsMInputR').focus();
     });
   }
   document.getElementById('addRowBtnR').addEventListener('click', ()=>{
