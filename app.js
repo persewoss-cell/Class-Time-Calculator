@@ -1,6 +1,10 @@
 /* 실습 시간 계산기 — 정적 클라이언트 전용 앱 (백엔드/엑셀 없음, localStorage로 진행상황 보존) */
 
 const STORAGE_KEY = 'ctc_state_v5';
+// "계획 저장"으로 저장한 실습 목록/실제 강의 종료 설정. 세션 상태(STORAGE_KEY)와
+// 별도로 저장해서, 초기화하거나 새로고침·재접속해도 이 저장된 계획이 기본값이 된다.
+// 단, localStorage는 이 브라우저(이 기기)에만 저장되고 다른 기기와는 동기화되지 않는다.
+const PLAN_KEY = 'ctc_saved_plan_v1';
 
 /* ---------- time helpers ---------- */
 function pad(n){ return String(n).padStart(2,'0'); }
@@ -53,31 +57,63 @@ function formatClockRel(ms, baseMs){
 }
 
 /* ---------- state ---------- */
+// 저장된 계획이 없을 때 쓰는 공장 기본값(맨 처음 업로드했던 실습 목록)
+const FACTORY_TASKS = [
+  { name: '이론', planned: 20 },
+  { name: 'STEP1', planned: 15 },
+  { name: 'STEP2', planned: 15 },
+  { name: 'STEP3', planned: 15 },
+  { name: 'STEP4(방향)', planned: 15 },
+  { name: 'STEP4(시수)', planned: 20 },
+  { name: '전단계', planned: 20 },
+  { name: '내용체계', planned: 20 },
+  { name: '핵심아이디어', planned: 20 },
+  { name: '성취기준', planned: 15 },
+  { name: '필요성/목표', planned: 15 },
+  { name: '단원지도계획', planned: 15 },
+  { name: '평가계획', planned: 15 }
+];
+
+function loadSavedPlan(){
+  try{
+    const raw = localStorage.getItem(PLAN_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed.tasks) || parsed.tasks.length === 0) return null;
+    return parsed;
+  }catch(e){
+    return null;
+  }
+}
+
+// 현재 실습 목록·실제 강의 종료 설정을 "계획 저장"으로 저장해 기본값으로 삼는다.
+function saveSavedPlan(){
+  const cleaned = state.tasks
+    .map((t,i)=>({ name: (t.name||'').trim() || `실습 ${i+1}`, planned: Math.max(1, Number(t.planned)||0) }))
+    .filter(t => t.planned > 0);
+  if (cleaned.length === 0) return false;
+  localStorage.setItem(PLAN_KEY, JSON.stringify({
+    tasks: cleaned,
+    hardEndH: state.hardEndH,
+    hardEndM: state.hardEndM,
+    hardEndAbsH: state.hardEndAbsH,
+    hardEndAbsM: state.hardEndAbsM
+  }));
+  return true;
+}
+
 function defaultState(){
+  const saved = loadSavedPlan();
   return {
-    tasks: [
-      { name: '이론', planned: 20 },
-      { name: 'STEP1', planned: 15 },
-      { name: 'STEP2', planned: 15 },
-      { name: 'STEP3', planned: 15 },
-      { name: 'STEP4(방향)', planned: 15 },
-      { name: 'STEP4(시수)', planned: 20 },
-      { name: '전단계', planned: 20 },
-      { name: '내용체계', planned: 20 },
-      { name: '핵심아이디어', planned: 20 },
-      { name: '성취기준', planned: 15 },
-      { name: '필요성/목표', planned: 15 },
-      { name: '단원지도계획', planned: 15 },
-      { name: '평가계획', planned: 15 }
-    ],
+    tasks: saved ? saved.tasks : FACTORY_TASKS,
     startHM: '13:30',
     targetMs: null,         // 목표 종료 시각(절대 ms). 수업 시작 시 확정되어 자정을 넘겨도 정확하다.
     // 실제 강의 종료 시각은 "N시간 M분 뒤"(hardEndH/M) 또는 "몇 시 몇 분"(hardEndAbsH/M)
     // 둘 중 한 가지 방법으로만 입력한다. 전부 빈 문자열이면 미설정 상태.
-    hardEndH: '',
-    hardEndM: '',
-    hardEndAbsH: '',
-    hardEndAbsM: '',
+    hardEndH: saved ? saved.hardEndH : '',
+    hardEndM: saved ? saved.hardEndM : '',
+    hardEndAbsH: saved ? saved.hardEndAbsH : '',
+    hardEndAbsM: saved ? saved.hardEndAbsM : '',
     phase: 'edit',        // edit -> running -> finished
     actualStartMs: null,
     log: [],               // [{name, planned, doneAtMs, durationMin}]
@@ -396,6 +432,8 @@ function renderEdit(){
         ${rowsHtml}
       </div>
       <button class="btn add-row-btn" id="addRowBtn">+ 강의 계획 시간 추가</button>
+      <button class="btn btn-ghost" id="savePlanBtn" style="margin-top:8px;">계획 저장</button>
+      <div id="savePlanMsg" style="min-height:18px;font-size:12px;color:var(--ahead);text-align:center;margin-top:2px;"></div>
 
       <p class="desc" style="margin-top:14px;">강의 계획 시간 합계(${fmtMin(plannedSum)})</p>
       <div id="errBox" style="color:var(--behind);font-size:13px;"></div>
@@ -429,6 +467,16 @@ function renderEdit(){
     state.startHM = msToHM24(Date.now());
     saveState();
     renderEdit();
+  });
+  document.getElementById('savePlanBtn').addEventListener('click', ()=>{
+    const msg = document.getElementById('savePlanMsg');
+    if (saveSavedPlan()){
+      msg.style.color = 'var(--ahead)';
+      msg.textContent = '이 기기에 저장했어요. 초기화하거나 다시 열어도 이 계획이 기본으로 떠요.';
+    } else {
+      msg.style.color = 'var(--behind)';
+      msg.textContent = '실습을 1개 이상 추가한 뒤 저장해주세요.';
+    }
   });
   document.getElementById('addRowBtn').addEventListener('click', ()=>{
     state.tasks.push({ name: `실습 ${state.tasks.length+1}`, planned: 10 });
