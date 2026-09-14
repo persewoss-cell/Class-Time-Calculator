@@ -61,7 +61,7 @@ function formatClockRel(ms, baseMs){
 const FACTORY_TASKS = [
   { name: '이론', planned: 20 },
   { name: 'STEP1', planned: 15 },
-  { name: 'STEP2', planned: 15 },
+  { name: 'STEP2', planned: 10 },
   { name: 'STEP3', planned: 15 },
   { name: 'STEP4(방향)', planned: 15 },
   { name: 'STEP4(시수)', planned: 20 },
@@ -106,7 +106,7 @@ function defaultState(){
   const saved = loadSavedPlan();
   return {
     tasks: saved ? saved.tasks : FACTORY_TASKS,
-    startHM: '13:30',
+    startHM: msToHM24(Date.now()),
     targetMs: null,         // 목표 종료 시각(절대 ms). 수업 시작 시 확정되어 자정을 넘겨도 정확하다.
     // 실제 강의 종료 시각은 "N시간 M분 뒤"(hardEndH/M) 또는 "몇 시 몇 분"(hardEndAbsH/M)
     // 둘 중 한 가지 방법으로만 입력한다. 전부 빈 문자열이면 미설정 상태.
@@ -130,7 +130,11 @@ function loadState(){
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return defaultState();
     const parsed = JSON.parse(raw);
-    return Object.assign(defaultState(), parsed);
+    const merged = Object.assign(defaultState(), parsed);
+    // 설정 화면으로 돌아올 때는(진행 중인 수업이 없을 때) 시작 시각을 예전에
+    // 써둔 값이 아니라 항상 지금 이 순간의 시각으로 보여준다.
+    if (merged.phase === 'edit') merged.startHM = msToHM24(Date.now());
+    return merged;
   }catch(e){
     return defaultState();
   }
@@ -403,7 +407,7 @@ function renderEdit(){
           <label>시작 시각</label>
           <div class="time-row">
             <input type="time" id="startInput" value="${state.startHM}">
-            <button class="btn-mini" id="nowBtn">지금</button>
+            <button class="btn-mini" id="nowBtn">새로고침</button>
           </div>
         </div>
         <div class="field">
@@ -791,6 +795,7 @@ function renderFinished(){
   });
   document.getElementById('editBtn').addEventListener('click', ()=>{
     state.phase = 'edit';
+    state.startHM = msToHM24(Date.now());
     state.actualStartMs = null;
     state.log = [];
     state.currentIndex = 0;
