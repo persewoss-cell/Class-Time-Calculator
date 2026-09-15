@@ -64,14 +64,14 @@ const FACTORY_TASKS = [
   { name: 'STEP2', planned: 10 },
   { name: 'STEP3', planned: 15 },
   { name: 'STEP4(방향)', planned: 15 },
-  { name: 'STEP4(시수)', planned: 20 },
-  { name: '전단계', planned: 20 },
-  { name: '내용체계', planned: 20 },
-  { name: '핵심아이디어', planned: 20 },
+  { name: 'STEP4(시수)', planned: 15 },
+  { name: '전단계', planned: 15 },
+  { name: '내용체계', planned: 15 },
+  { name: '핵심아이디어', planned: 10 },
   { name: '성취기준', planned: 15 },
   { name: '필요성/목표', planned: 15 },
-  { name: '단원지도계획', planned: 15 },
-  { name: '평가계획', planned: 15 }
+  { name: '단원지도계획', planned: 20 },
+  { name: '평가계획', planned: 20 }
 ];
 
 function loadSavedPlan(){
