@@ -121,7 +121,20 @@ body{
   border-radius:14px;
   padding:18px;
 }
-h1{font-size:23px;margin:0 0 6px;text-align:center;}
+h1{font-size:23px;margin:0;text-align:center;}
+.app-title{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  margin:0 0 6px;
+}
+.app-title-icon{
+  width:30px;
+  height:30px;
+  border-radius:8px;
+  flex-shrink:0;
+}
 p.desc{color:var(--muted);font-size:14px;line-height:1.5;margin:0 0 18px;}
 
 .field{margin-bottom:14px;}

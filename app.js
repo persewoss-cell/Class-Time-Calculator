@@ -343,7 +343,10 @@ function renderHome(){
 
   app.innerHTML = `
     <div class="section">
-      <h1>강의 시간 계산기</h1>
+      <div class="app-title">
+        <img src="icon.png" alt="" class="app-title-icon">
+        <h1>강의 시간 계산기</h1>
+      </div>
       <div class="session-box">
         <button class="session-box-body" id="resumeBox">
           <div class="session-box-title">${isFinished ? '수업이 완료됐어요' : `진행 중 · ${escapeHtml(current.name)}`}</div>
@@ -400,7 +403,10 @@ function renderEdit(){
 
   app.innerHTML = `
     <div class="section">
-      <h1>강의 시간 계산기</h1>
+      <div class="app-title">
+        <img src="icon.png" alt="" class="app-title-icon">
+        <h1>강의 시간 계산기</h1>
+      </div>
 
       <div class="card">
         <div class="field">
